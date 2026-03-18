@@ -1,5 +1,6 @@
 package com.tkachukmo.bandresearchapp.data.remote
 
+import com.tkachukmo.bandresearchapp.data.local.SessionStorage
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
@@ -8,7 +9,8 @@ import javax.inject.Singleton
 
 @Singleton
 class AuthRepository @Inject constructor(
-    private val supabase: SupabaseClient
+    private val supabase: SupabaseClient,
+    private val sessionStorage: SessionStorage
 ) {
     suspend fun signIn(email: String, password: String): Result<Unit> {
         return try {
@@ -16,6 +18,8 @@ class AuthRepository @Inject constructor(
                 this.email = email
                 this.password = password
             }
+            val session = supabase.auth.currentSessionOrNull()
+            session?.let { sessionStorage.saveSession(it.accessToken) }
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -28,6 +32,8 @@ class AuthRepository @Inject constructor(
                 this.email = email
                 this.password = password
             }
+            val session = supabase.auth.currentSessionOrNull()
+            session?.let { sessionStorage.saveSession(it.accessToken) }
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -46,6 +52,7 @@ class AuthRepository @Inject constructor(
     suspend fun signOut(): Result<Unit> {
         return try {
             supabase.auth.signOut()
+            sessionStorage.clearSession()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -54,5 +61,20 @@ class AuthRepository @Inject constructor(
 
     fun isLoggedIn(): Boolean {
         return supabase.auth.currentSessionOrNull() != null
+    }
+
+    suspend fun restoreSession(): Boolean {
+        return try {
+            val savedToken = sessionStorage.getSession()
+            if (savedToken != null) {
+                supabase.auth.refreshCurrentSession()
+                true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            sessionStorage.clearSession()
+            false
+        }
     }
 }
