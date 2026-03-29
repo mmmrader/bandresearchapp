@@ -3,6 +3,8 @@ package com.tkachukmo.bandresearchapp.feature.profile.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.tkachukmo.bandresearchapp.feature.auth.viewmodel.AuthViewModel
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -73,7 +75,8 @@ val musicGenres = listOf(
 fun ProfileScreen(
     modifier: Modifier = Modifier,
     onNavigateToBandManager: () -> Unit = {},
-    onLogout: () -> Unit = {}
+    onLogout: () -> Unit = {},
+    viewModel: AuthViewModel = hiltViewModel()
 ) {
     var isDarkMode by remember { mutableStateOf(false) }
     var notificationsEnabled by remember { mutableStateOf(true) }
@@ -360,7 +363,9 @@ fun ProfileScreen(
                     hasArrow = false,
                     tint = MaterialTheme.colorScheme.error
                 ),
-                onClick = onLogout
+                onClick = {
+                    viewModel.signOut(onSuccess = onLogout)
+                }
             )
         }
     }

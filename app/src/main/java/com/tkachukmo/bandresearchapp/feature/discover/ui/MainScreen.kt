@@ -86,8 +86,9 @@ val bottomNavItems = listOf(
 fun MainScreen(
     onNavigateToBandDetail: (String) -> Unit = {},
     onNavigateToNotifications: () -> Unit = {},
-    onNavigateToBandManager: () -> Unit = {}
-) {
+    onNavigateToBandManager: () -> Unit = {},
+    onLogout: () -> Unit = {}
+){
     var selectedIndex by rememberSaveable { mutableIntStateOf(0) }
 
     Scaffold(
@@ -200,7 +201,8 @@ fun MainScreen(
             )
             4 -> ProfileScreen(
                 modifier = Modifier.padding(paddingValues),
-                onNavigateToBandManager = onNavigateToBandManager
+                onNavigateToBandManager = onNavigateToBandManager,
+                onLogout = onLogout
             )
         }
     }

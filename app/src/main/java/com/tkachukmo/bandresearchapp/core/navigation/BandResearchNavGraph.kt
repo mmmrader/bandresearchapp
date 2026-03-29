@@ -81,6 +81,14 @@ fun BandResearchNavGraph() {
                 },
                 onNavigateToNotifications = {
                     navController.navigate(Routes.NOTIFICATIONS)
+                },
+                onNavigateToBandManager = {
+                    navController.navigate(Routes.BAND_MANAGER)
+                },
+                onLogout = {
+                    navController.navigate(Routes.LOGIN) {
+                        popUpTo(Routes.MAIN) { inclusive = true }
+                    }
                 }
             )
         }

@@ -75,4 +75,19 @@ class AuthViewModel @Inject constructor(
     fun clearError() {
         _uiState.value = _uiState.value.copy(errorMessage = null)
     }
+    fun signOut(onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            _uiState.value = AuthUiState(isLoading = true)
+            val result = authRepository.signOut()
+            if (result.isSuccess) {
+                _uiState.value = AuthUiState()
+                onSuccess()
+            } else {
+                _uiState.value = AuthUiState(
+                    errorMessage = result.exceptionOrNull()?.message
+                        ?: "Помилка виходу"
+                )
+            }
+        }
+    }
 }
