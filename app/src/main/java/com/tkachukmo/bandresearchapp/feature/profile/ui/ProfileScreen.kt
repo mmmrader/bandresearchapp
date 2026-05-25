@@ -3,8 +3,6 @@ package com.tkachukmo.bandresearchapp.feature.profile.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.hilt.navigation.compose.hiltViewModel
-import com.tkachukmo.bandresearchapp.feature.auth.viewmodel.AuthViewModel
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -42,6 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,6 +53,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.tkachukmo.bandresearchapp.feature.auth.viewmodel.AuthViewModel
 
 data class ProfileMenuItem(
     val icon: ImageVector,
@@ -83,6 +83,11 @@ fun ProfileScreen(
     val selectedGenres = remember {
         mutableStateOf(setOf("Рок", "Поп", "Фолк"))
     }
+
+    // ОЖИВЛЕННЯ ДАНИХ: Тепер ми слухаємо реальні зміни з ViewModel
+    val userName by viewModel.userName.collectAsState()
+    val userInitials by viewModel.userInitials.collectAsState()
+    val userEmail by viewModel.userEmail.collectAsState()
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -116,7 +121,7 @@ fun ProfileScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "МТ",
+                            text = userInitials, // Реальні ініціали
                             fontSize = 32.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimary
@@ -126,13 +131,13 @@ fun ProfileScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Text(
-                        text = "Михайло Ткачук",
+                        text = userName, // Реальнe ім'я
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.SemiBold
                     )
 
                     Text(
-                        text = "m.tkachuk@email.com",
+                        text = userEmail, // Реальна пошта з Supabase
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -364,6 +369,7 @@ fun ProfileScreen(
                     tint = MaterialTheme.colorScheme.error
                 ),
                 onClick = {
+                    // Змінено виклик функції відповідно до AuthViewModel
                     viewModel.signOut(onSuccess = onLogout)
                 }
             )

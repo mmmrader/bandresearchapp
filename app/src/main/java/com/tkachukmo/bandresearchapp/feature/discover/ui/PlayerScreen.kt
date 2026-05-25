@@ -1,199 +1,190 @@
 package com.tkachukmo.bandresearchapp.feature.discover.ui
 
+import android.graphics.BitmapFactory
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.RepeatOne
-import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.tkachukmo.bandresearchapp.feature.catalog.ui.TrackItem
-import com.tkachukmo.bandresearchapp.feature.catalog.ui.sampleTracks
-import kotlinx.coroutines.delay
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.media3.common.Player
+import coil3.compose.AsyncImage // ВАЖЛИВО: Правильний імпорт Coil 3
+import com.tkachukmo.bandresearchapp.feature.discover.viewmodel.PlayerViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayerScreen(
-    trackId: String = "1",
-    onNavigateBack: () -> Unit = {}
+    trackId: String,
+    onNavigateBack: () -> Unit,
+    viewModel: PlayerViewModel = hiltViewModel()
 ) {
-    var currentTrackIndex by remember {
-        mutableIntStateOf(
-            sampleTracks.indexOfFirst { it.id == trackId }.takeIf { it >= 0 } ?: 0
-        )
+    val track by viewModel.track.collectAsState()
+    val isPlaying by viewModel.isPlaying.collectAsState()
+    val progress by viewModel.progress.collectAsState()
+    val duration by viewModel.trackDuration.collectAsState()
+
+    // Дані з метаданих файлу (Title залишаємо як fallback)
+    val extractedTitle by viewModel.extractedTitle.collectAsState()
+    val extractedArtwork by viewModel.extractedArtwork.collectAsState()
+
+    // Назва гурту з бази даних
+    val bandName by viewModel.bandName.collectAsState()
+
+    // Стани кнопок керування
+    val shuffleMode by viewModel.shuffleModeEnabled.collectAsState()
+    val repeatMode by viewModel.repeatMode.collectAsState()
+
+    LaunchedEffect(trackId) {
+        viewModel.loadTrack(trackId)
     }
-    val currentTrack = sampleTracks[currentTrackIndex]
 
-    var isPlaying by remember { mutableStateOf(true) }
-    var isFavorite by remember { mutableStateOf(false) }
-    var isShuffle by remember { mutableStateOf(false) }
-    var repeatMode by remember { mutableIntStateOf(0) } // 0=off, 1=all, 2=one
-    var progress by remember { mutableFloatStateOf(0f) }
+    if (track == null) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
 
-    // Авто-прогрес
-    LaunchedEffect(isPlaying, currentTrackIndex) {
-        if (isPlaying) {
-            while (progress < 1f) {
-                delay(500)
-                if (isPlaying) progress += 0.002f
-            }
-            // Авто перехід до наступного треку
-            progress = 0f
-            currentTrackIndex = (currentTrackIndex + 1) % sampleTracks.size
+    // --- СТАРА ЛОГІКА ДЛЯ EMBEDDED ARTWORK ---
+    // Ми використовуємо це ТІЛЬКИ як fallback, якщо немає URL з Supabase
+    val embeddedArtworkBitmap = remember(extractedArtwork) {
+        extractedArtwork?.let { bytes ->
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
         }
     }
 
-    // Анімація обкладинки
+    // Визначаємо, яку назву показувати
+    val displayTitle = extractedTitle ?: track!!.title
+    val displayArtist = bandName // Тепер тут динамічна назва з БД
+
     val artScale by animateFloatAsState(
         targetValue = if (isPlaying) 1f else 0.85f,
-        animationSpec = tween(300),
-        label = "art_scale"
+        animationSpec = tween(durationMillis = 500),
+        label = "artScale"
     )
 
-    // Конвертація прогресу в час
-    fun progressToTime(p: Float): String {
-        val totalSeconds = 252 // 4:12
-        val current = (totalSeconds * p).toInt()
-        val m = current / 60
-        val s = current % 60
-        return "$m:${s.toString().padStart(2, '0')}"
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.primaryContainer,
-                        MaterialTheme.colorScheme.background,
-                        MaterialTheme.colorScheme.background
-                    )
-                )
+    Box(modifier = Modifier.fillMaxSize()) {
+        // --- 1. РОЗМИТИЙ ФОН ---
+        // Ми використовуємо Coil також для завантаження фону і розмиваємо Modifier'ом
+        if (track!!.coverUrl != null) {
+            AsyncImage(
+                model = track!!.coverUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(radius = 80.dp) // Розмиття Modifier'ом
             )
-    ) {
+        } else if (embeddedArtworkBitmap != null) {
+            // Fallback до embedded картинки для фону
+            Image(
+                bitmap = embeddedArtworkBitmap,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(radius = 80.dp)
+            )
+        } else {
+            // Заглушка, якщо картинки немає взагалі
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color(0xFF2A2A35), Color(0xFF121218))
+                        )
+                    )
+            )
+        }
+
+        // Темний шар поверх розмитого фону
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 24.dp),
+                .padding(24.dp)
+                .systemBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-
-            // Top Bar
+            // Верхній бар
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 16.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onNavigateBack) {
-                    Icon(
-                        Icons.Default.KeyboardArrowDown,
-                        contentDescription = "Закрити",
-                        modifier = Modifier.size(32.dp)
-                    )
+                    Icon(Icons.Default.KeyboardArrowDown, "Згорнути", tint = Color.White, modifier = Modifier.size(32.dp))
                 }
-
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "Зараз грає",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "Океан Ельзи",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
-                IconButton(onClick = { isFavorite = !isFavorite }) {
-                    Icon(
-                        if (isFavorite) Icons.Default.Favorite
-                        else Icons.Default.FavoriteBorder,
-                        contentDescription = "Улюблене",
-                        tint = if (isFavorite) Color(0xFFE91E63)
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                Text("Зараз грає", style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.8f))
+                IconButton(onClick = { /* Меню */ }) {
+                    Icon(Icons.Default.MoreVert, "Опції", tint = Color.White)
                 }
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.weight(1f))
 
-            // Обкладинка альбому
-            Card(
+            // --- 2. ОБКЛАДИНКА ТРЕКУ (В КВАДРАТІ) ---
+            Box(
                 modifier = Modifier
-                    .size((240 * artScale).dp),
-                shape = RoundedCornerShape(24.dp),
-                elevation = CardDefaults.cardElevation(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                )
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .scale(artScale)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color.DarkGray.copy(alpha = 0.5f)),
+                contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
+                // Пріоритет завантаження: URL > Embedded > Icon
+                if (track!!.coverUrl != null) {
+                    AsyncImage(
+                        model = track!!.coverUrl,
+                        contentDescription = "Cover",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else if (embeddedArtworkBitmap != null) {
+                    Image(
+                        bitmap = embeddedArtworkBitmap,
+                        contentDescription = "Cover",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
                     Icon(
                         Icons.Default.MusicNote,
                         contentDescription = null,
-                        modifier = Modifier.size(96.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        modifier = Modifier.size(100.dp),
+                        tint = Color.White.copy(alpha = 0.5f)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(40.dp))
+            Spacer(modifier = Modifier.weight(1f))
 
-            // Назва треку і артист
+            // Інфо про трек
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -201,219 +192,94 @@ fun PlayerScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = currentTrack.title,
-                        style = MaterialTheme.typography.headlineSmall,
+                        text = displayTitle,
+                        style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
+                        color = Color.White,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "Океан Ельзи",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = displayArtist,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White.copy(alpha = 0.7f)
                     )
                 }
-
-                Spacer(modifier = Modifier.width(16.dp))
-
-                // Трек лічильник
-                Text(
-                    text = "${currentTrackIndex + 1}/${sampleTracks.size}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                IconButton(onClick = { /* Додати в обране */ }) {
+                    Icon(Icons.Default.FavoriteBorder, "В обране", tint = Color.White, modifier = Modifier.size(28.dp))
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Прогрес бар
-            Column {
-                Slider(
-                    value = progress,
-                    onValueChange = { progress = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = SliderDefaults.colors(
-                        thumbColor = MaterialTheme.colorScheme.primary,
-                        activeTrackColor = MaterialTheme.colorScheme.primary,
-                        inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
+            Slider(
+                value = progress,
+                onValueChange = { viewModel.seekTo(it) },
+                valueRange = 0f..(duration.takeIf { it > 0f } ?: 100f),
+                colors = SliderDefaults.colors(
+                    thumbColor = Color.White,
+                    activeTrackColor = Color.White,
+                    inactiveTrackColor = Color.White.copy(alpha = 0.3f)
                 )
+            )
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = progressToTime(progress),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = currentTrack.duration,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(formatTime(progress.toInt()), color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelMedium)
+                Text(formatTime(duration.toInt()), color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelMedium)
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Основні кнопки керування
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Shuffle
-                IconButton(onClick = { isShuffle = !isShuffle }) {
+                IconButton(onClick = { viewModel.toggleShuffle() }) {
                     Icon(
                         Icons.Default.Shuffle,
-                        contentDescription = "Перемішати",
-                        tint = if (isShuffle) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp)
+                        contentDescription = "Shuffle",
+                        tint = if (shuffleMode) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.5f)
                     )
                 }
 
-                // Попередній трек
-                IconButton(
-                    onClick = {
-                        progress = 0f
-                        currentTrackIndex = if (currentTrackIndex > 0)
-                            currentTrackIndex - 1
-                        else
-                            sampleTracks.size - 1
-                    },
-                    modifier = Modifier.size(48.dp)
+                IconButton(onClick = { viewModel.skipToPrevious() }) {
+                    Icon(Icons.Default.SkipPrevious, "Попередній", tint = Color.White, modifier = Modifier.size(40.dp))
+                }
+
+                FilledIconButton(
+                    onClick = { viewModel.togglePlayPause() },
+                    modifier = Modifier.size(72.dp),
+                    shape = CircleShape,
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
                     Icon(
-                        Icons.Default.SkipPrevious,
-                        contentDescription = "Попередній",
-                        modifier = Modifier.size(36.dp)
-                    )
-                }
-
-                // Play / Pause
-                Card(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(RoundedCornerShape(50)),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    ),
-                    onClick = { isPlaying = !isPlaying }
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            if (isPlaying) Icons.Default.Pause
-                            else Icons.Default.PlayArrow,
-                            contentDescription = if (isPlaying) "Пауза" else "Грати",
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(36.dp)
-                        )
-                    }
-                }
-
-                // Наступний трек
-                IconButton(
-                    onClick = {
-                        progress = 0f
-                        currentTrackIndex = (currentTrackIndex + 1) % sampleTracks.size
-                    },
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(
-                        Icons.Default.SkipNext,
-                        contentDescription = "Наступний",
-                        modifier = Modifier.size(36.dp)
-                    )
-                }
-
-                // Repeat
-                IconButton(
-                    onClick = { repeatMode = (repeatMode + 1) % 3 }
-                ) {
-                    Icon(
-                        when (repeatMode) {
-                            2 -> Icons.Default.RepeatOne
-                            else -> Icons.Default.Repeat
-                        },
-                        contentDescription = "Повтор",
-                        tint = if (repeatMode > 0) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Черга треків
-            Text(
-                text = "Далі в черзі",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 8.dp)
-            )
-
-            val nextTracks = sampleTracks
-                .drop(currentTrackIndex + 1)
-                .take(3)
-
-            nextTracks.forEach { track ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Card(
+                        if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = "Play/Pause",
                         modifier = Modifier.size(40.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    ) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Default.MusicNote,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = track.title,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = "Океан Ельзи",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Text(
-                        text = track.duration,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = Color.White
                     )
                 }
+
+                IconButton(onClick = { viewModel.skipToNext() }) {
+                    Icon(Icons.Default.SkipNext, "Наступний", tint = Color.White, modifier = Modifier.size(40.dp))
+                }
+
+                IconButton(onClick = { viewModel.toggleRepeat() }) {
+                    val repeatTint = if (repeatMode == Player.REPEAT_MODE_OFF) Color.White.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary
+                    Icon(Icons.Default.Repeat, "Repeat", tint = repeatTint)
+                }
             }
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
+}
+
+fun formatTime(seconds: Int): String {
+    val min = seconds / 60
+    val sec = seconds % 60
+    return "$min:${sec.toString().padStart(2, '0')}"
 }

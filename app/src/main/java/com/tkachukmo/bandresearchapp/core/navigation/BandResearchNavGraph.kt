@@ -1,9 +1,13 @@
 package com.tkachukmo.bandresearchapp.core.navigation
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navDeepLink
 import com.tkachukmo.bandresearchapp.feature.auth.ui.ForgotPasswordScreen
 import com.tkachukmo.bandresearchapp.feature.auth.ui.LoginScreen
 import com.tkachukmo.bandresearchapp.feature.auth.ui.RegisterScreen
@@ -89,6 +93,10 @@ fun BandResearchNavGraph() {
                     navController.navigate(Routes.LOGIN) {
                         popUpTo(Routes.MAIN) { inclusive = true }
                     }
+                },
+                // ДОДАНО: Тепер MainScreen знає, як відкрити плеєр при кліку на міні-плеєр
+                onNavigateToPlayer = { trackId ->
+                    navController.navigate("${Routes.PLAYER_BASE}/$trackId")
                 }
             )
         }
@@ -106,7 +114,23 @@ fun BandResearchNavGraph() {
             )
         }
 
-        composable(Routes.PLAYER) { backStackEntry ->
+        // ОНОВЛЕНО: Додані анімації виїзду/згортання та Deep Link для шторки
+        composable(
+            route = Routes.PLAYER,
+            deepLinks = listOf(navDeepLink { uriPattern = "bandmatch://player" }),
+            enterTransition = {
+                slideInVertically(
+                    initialOffsetY = { fullHeight -> fullHeight },
+                    animationSpec = tween(400)
+                )
+            },
+            exitTransition = {
+                slideOutVertically(
+                    targetOffsetY = { fullHeight -> fullHeight },
+                    animationSpec = tween(400)
+                )
+            }
+        ) { backStackEntry ->
             val trackId = backStackEntry.arguments?.getString("trackId") ?: "1"
             PlayerScreen(
                 trackId = trackId,

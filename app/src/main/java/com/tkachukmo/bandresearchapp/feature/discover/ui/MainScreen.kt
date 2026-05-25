@@ -1,6 +1,7 @@
 package com.tkachukmo.bandresearchapp.feature.discover.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -87,8 +88,9 @@ fun MainScreen(
     onNavigateToBandDetail: (String) -> Unit = {},
     onNavigateToNotifications: () -> Unit = {},
     onNavigateToBandManager: () -> Unit = {},
-    onLogout: () -> Unit = {}
-){
+    onLogout: () -> Unit = {},
+    onNavigateToPlayer: (String) -> Unit = {} // Доданий параметр для переходу на великий плеєр
+) {
     var selectedIndex by rememberSaveable { mutableIntStateOf(0) }
 
     Scaffold(
@@ -162,22 +164,29 @@ fun MainScreen(
             }
         },
         bottomBar = {
-            NavigationBar {
-                bottomNavItems.forEachIndexed { index, item ->
-                    NavigationBarItem(
-                        selected = selectedIndex == index,
-                        onClick = { selectedIndex = index },
-                        icon = {
-                            Icon(
-                                imageVector = if (selectedIndex == index)
-                                    item.selectedIcon
-                                else
-                                    item.unselectedIcon,
-                                contentDescription = item.label
-                            )
-                        },
-                        label = { Text(item.label) }
-                    )
+            Column {
+                // Міні-плеєр завжди відображається над навігацією, якщо обрано трек
+                MiniPlayer(
+                    onNavigateToPlayer = onNavigateToPlayer
+                )
+
+                NavigationBar {
+                    bottomNavItems.forEachIndexed { index, item ->
+                        NavigationBarItem(
+                            selected = selectedIndex == index,
+                            onClick = { selectedIndex = index },
+                            icon = {
+                                Icon(
+                                    imageVector = if (selectedIndex == index)
+                                        item.selectedIcon
+                                    else
+                                        item.unselectedIcon,
+                                    contentDescription = item.label
+                                )
+                            },
+                            label = { Text(item.label) }
+                        )
+                    }
                 }
             }
         }
@@ -186,7 +195,6 @@ fun MainScreen(
             0 -> DiscoverScreen(
                 modifier = Modifier.padding(paddingValues),
                 onBandClick = onNavigateToBandDetail,
-                onNavigateToNotifications = onNavigateToNotifications
             )
             1 -> CatalogScreen(
                 modifier = Modifier.padding(paddingValues),
