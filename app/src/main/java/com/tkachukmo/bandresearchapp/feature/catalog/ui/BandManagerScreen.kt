@@ -33,8 +33,11 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import com.tkachukmo.bandresearchapp.data.remote.dto.BandDto
+import com.tkachukmo.bandresearchapp.data.remote.dto.ApplicationDto
+import com.tkachukmo.bandresearchapp.data.remote.dto.BandEventDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.ReleaseDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.TrackDto
+import com.tkachukmo.bandresearchapp.data.remote.dto.VacancyDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.VideoDto
 import com.tkachukmo.bandresearchapp.feature.catalog.viewmodel.BandManagerViewModel
 import com.tkachukmo.bandresearchapp.feature.discover.ui.MiniPlayer
@@ -52,6 +55,9 @@ fun BandManagerScreen(
     val tracks by viewModel.tracks.collectAsState()
     val videos by viewModel.videos.collectAsState()
     val releases by viewModel.releases.collectAsState()
+    val events by viewModel.events.collectAsState()
+    val vacancies by viewModel.vacancies.collectAsState()
+    val applications by viewModel.applications.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
 
     var isCreatingBand by rememberSaveable { mutableStateOf(false) }
@@ -93,7 +99,7 @@ fun BandManagerScreen(
                 isUploadingTrack -> UploadTrackForm(viewModel, releases, { viewModel.clearUploadForm(); isUploadingTrack = false }, { viewModel.uploadTrack(context) { isUploadingTrack = false } })
                 isAddingVideo -> AddVideoForm(viewModel, { isAddingVideo = false }, { isAddingVideo = false })
                 isEditingProfile && currentBand != null -> EditBandProfile(currentBand!!, viewModel) { isEditingProfile = false }
-                currentBand != null -> BandDashboard(currentBand!!, tracks, videos, releases, viewModel, { isEditingProfile = true }, { isUploadingTrack = true }, { isAddingVideo = true }, { isCreatingRelease = true })
+                currentBand != null -> BandDashboard(currentBand!!, tracks, videos, releases, events, vacancies, applications, viewModel, { isEditingProfile = true }, { isUploadingTrack = true }, { isAddingVideo = true }, { isCreatingRelease = true })
                 isCreatingBand -> CreateBandForm(viewModel) { isCreatingBand = false }
                 else -> EmptyBandState { isCreatingBand = true }
             }
@@ -123,6 +129,9 @@ fun BandDashboard(
     tracks: List<TrackDto>,
     videos: List<VideoDto>,
     releases: List<ReleaseDto>,
+    events: List<BandEventDto>,
+    vacancies: List<VacancyDto>,
+    applications: List<ApplicationDto>,
     viewModel: BandManagerViewModel,
     onEditClick: () -> Unit,
     onAddTrackClick: () -> Unit,
@@ -216,7 +225,247 @@ fun BandDashboard(
             Spacer(modifier = Modifier.height(8.dp))
         }
 
+        Spacer(modifier = Modifier.height(24.dp))
+        BandEventsManagerSection(
+            events = events,
+            onCreateEvent = { title, desc, type, date, venue, city, smart, spotify, apple, youtube ->
+                viewModel.createManualEvent(title, desc, type, date, venue, city, smart, spotify, apple, youtube) {}
+            }
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+        VacanciesManagerSection(
+            vacancies = vacancies,
+            applications = applications,
+            onCreateVacancy = viewModel::createVacancy,
+            onDeleteVacancy = viewModel::deleteVacancy,
+            onAccept = { viewModel.updateApplicationStatus(it, "accepted") },
+            onReject = { viewModel.updateApplicationStatus(it, "rejected") },
+            onMessage = viewModel::sendMessageToCandidate
+        )
+
         Spacer(modifier = Modifier.height(100.dp))
+    }
+}
+
+@Composable
+fun BandEventsManagerSection(
+    events: List<BandEventDto>,
+    onCreateEvent: (String, String, String, String, String, String, String, String, String, String) -> Unit
+) {
+    var showForm by remember { mutableStateOf(false) }
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Події", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            IconButton(onClick = { showForm = !showForm }) {
+                Icon(Icons.Default.PostAdd, contentDescription = "Створити подію", tint = MaterialTheme.colorScheme.primary)
+            }
+        }
+        if (showForm) {
+            EventEditorCard(
+                onSave = { title, desc, type, date, venue, city, smart, spotify, apple, youtube ->
+                    onCreateEvent(title, desc, type, date, venue, city, smart, spotify, apple, youtube)
+                    showForm = false
+                },
+                onCancel = { showForm = false }
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+        if (events.isEmpty()) {
+            Text("Створіть першу новину, концерт або релізну публікацію", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            events.take(5).forEach { event ->
+                Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            when (event.type) {
+                                "release" -> Icons.Default.LibraryMusic
+                                "video" -> Icons.Default.VideoLibrary
+                                "concert", "tour" -> Icons.Default.Event
+                                else -> Icons.Default.Campaign
+                            },
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(event.title, fontWeight = FontWeight.SemiBold)
+                            Text(event.type, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun EventEditorCard(
+    onSave: (String, String, String, String, String, String, String, String, String, String) -> Unit,
+    onCancel: () -> Unit
+) {
+    var title by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var type by remember { mutableStateOf("news") }
+    var date by remember { mutableStateOf("") }
+    var venue by remember { mutableStateOf("") }
+    var city by remember { mutableStateOf("") }
+    var smart by remember { mutableStateOf("") }
+    var spotify by remember { mutableStateOf("") }
+    var apple by remember { mutableStateOf("") }
+    var youtube by remember { mutableStateOf("") }
+
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedTextField(title, { title = it }, label = { Text("Назва") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(description, { description = it }, label = { Text("Опис") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("news", "release", "video", "concert", "tour").forEach { option ->
+                    FilterChip(selected = type == option, onClick = { type = option }, label = { Text(option) })
+                }
+            }
+            OutlinedTextField(date, { date = it }, label = { Text("Дата: 2026-06-12") }, modifier = Modifier.fillMaxWidth())
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(venue, { venue = it }, label = { Text("Місце") }, modifier = Modifier.weight(1f))
+                OutlinedTextField(city, { city = it }, label = { Text("Місто") }, modifier = Modifier.weight(1f))
+            }
+            OutlinedTextField(smart, { smart = it }, label = { Text("Smart-link") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(spotify, { spotify = it }, label = { Text("Spotify") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(apple, { apple = it }, label = { Text("Apple Music") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(youtube, { youtube = it }, label = { Text("YouTube Music") }, modifier = Modifier.fillMaxWidth())
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("Скасувати") }
+                Button(onClick = { onSave(title, description, type, date, venue, city, smart, spotify, apple, youtube) }, enabled = title.isNotBlank(), modifier = Modifier.weight(1f)) { Text("Опублікувати") }
+            }
+        }
+    }
+}
+
+@Composable
+fun VacanciesManagerSection(
+    vacancies: List<VacancyDto>,
+    applications: List<ApplicationDto>,
+    onCreateVacancy: (String, String, String) -> Unit,
+    onDeleteVacancy: (String) -> Unit,
+    onAccept: (ApplicationDto) -> Unit,
+    onReject: (ApplicationDto) -> Unit,
+    onMessage: (ApplicationDto, String) -> Unit
+) {
+    var showForm by remember { mutableStateOf(false) }
+    var instrument by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var city by remember { mutableStateOf("") }
+
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Вакансії та заявки", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            IconButton(onClick = { showForm = !showForm }) {
+                Icon(Icons.Default.PersonAdd, contentDescription = "Створити вакансію", tint = MaterialTheme.colorScheme.primary)
+            }
+        }
+        if (showForm) {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(instrument, { instrument = it }, label = { Text("Інструмент") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(description, { description = it }, label = { Text("Опис") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+                    OutlinedTextField(city, { city = it }, label = { Text("Місто") }, modifier = Modifier.fillMaxWidth())
+                    Button(
+                        onClick = {
+                            onCreateVacancy(instrument, description, city)
+                            instrument = ""
+                            description = ""
+                            city = ""
+                            showForm = false
+                        },
+                        enabled = instrument.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Опублікувати вакансію") }
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+        if (vacancies.isEmpty()) {
+            Text("Відкритих вакансій немає", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            vacancies.forEach { vacancy ->
+                VacancyManagerItem(vacancy, onDeleteVacancy)
+            }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("Відгуки", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        if (applications.isEmpty()) {
+            Text("Нових кандидатів поки немає", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+        } else {
+            applications.forEach { app ->
+                ApplicationManagerItem(
+                    application = app,
+                    vacancy = vacancies.find { it.id == app.vacancyId },
+                    onAccept = { onAccept(app) },
+                    onReject = { onReject(app) },
+                    onMessage = { onMessage(app, it) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun VacancyManagerItem(vacancy: VacancyDto, onDelete: (String) -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.PersonSearch, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(vacancy.instrument, fontWeight = FontWeight.SemiBold)
+                Text(vacancy.city ?: "Місто не вказане", style = MaterialTheme.typography.bodySmall)
+            }
+            IconButton(onClick = { onDelete(vacancy.id) }) {
+                Icon(Icons.Default.Delete, contentDescription = "Закрити вакансію", tint = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+}
+
+@Composable
+fun ApplicationManagerItem(
+    application: ApplicationDto,
+    vacancy: VacancyDto?,
+    onAccept: () -> Unit,
+    onReject: () -> Unit,
+    onMessage: (String) -> Unit
+) {
+    var showMessage by remember { mutableStateOf(false) }
+    var text by remember { mutableStateOf("") }
+
+    if (showMessage) {
+        AlertDialog(
+            onDismissRequest = { showMessage = false },
+            title = { Text("Повідомлення кандидату") },
+            text = {
+                OutlinedTextField(text, { text = it }, label = { Text("Текст") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+            },
+            confirmButton = {
+                Button(onClick = { onMessage(text); text = ""; showMessage = false }, enabled = text.isNotBlank()) { Text("Надіслати") }
+            },
+            dismissButton = { TextButton(onClick = { showMessage = false }) { Text("Скасувати") } }
+        )
+    }
+
+    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("Кандидат: ${application.userId.take(8)}", fontWeight = FontWeight.Bold)
+            Text("Вакансія: ${vacancy?.instrument ?: application.vacancyId}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            application.message?.takeIf { it.isNotBlank() }?.let {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(it)
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { showMessage = true }) { Text("Написати") }
+                OutlinedButton(onClick = onReject) { Text("Відхилити") }
+                Button(onClick = onAccept) { Text("Прийняти") }
+            }
+        }
     }
 }
 

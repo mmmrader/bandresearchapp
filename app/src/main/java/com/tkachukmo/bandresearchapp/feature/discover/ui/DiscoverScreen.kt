@@ -22,7 +22,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.tkachukmo.bandresearchapp.feature.catalog.ui.toBandCard
+import com.tkachukmo.bandresearchapp.data.remote.dto.BandDto
+import kotlin.math.abs
 import com.tkachukmo.bandresearchapp.feature.discover.viewmodel.DiscoverViewModel
 
 data class BandCard(
@@ -34,7 +35,22 @@ data class BandCard(
     val color: Color,
     val tags: List<String>
 )
+fun BandDto.toBandCard(): BandCard {
+    val defaultColors = listOf(
+        Color(0xFF6750A4), Color(0xFF006064), Color(0xFF880E4F), Color(0xFFE65100), Color(0xFF1B5E20)
+    )
+    val colorIndex = this.id.hashCode().let { if (it == Int.MIN_VALUE) 0 else abs(it) } % defaultColors.size
 
+    return BandCard(
+        id = this.id,
+        name = this.name,
+        genre = this.genres.firstOrNull() ?: "Різне",
+        country = this.country ?: "Невідомо",
+        emoji = "🎸", // Поки залишаємо статичне емоджі для карток свайпу
+        color = defaultColors[colorIndex],
+        tags = this.genres
+    )
+}
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DiscoverScreen(

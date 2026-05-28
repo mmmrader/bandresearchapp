@@ -2,9 +2,11 @@ package com.tkachukmo.bandresearchapp.data.remote
 
 import android.content.Context
 import com.tkachukmo.bandresearchapp.data.remote.dto.BandDto
+import com.tkachukmo.bandresearchapp.data.remote.dto.FollowDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.TrackDto
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -53,6 +55,29 @@ class BandRepository @Inject constructor(
             return bands
         } catch (e: Exception) {
             throw e
+        }
+    }
+
+    suspend fun getFollowedBands(): List<BandDto> {
+        val userId = supabase.auth.currentUserOrNull()?.id ?: return emptyList()
+        val follows = supabase.postgrest["follows"]
+            .select { filter { eq("user_id", userId) } }
+            .decodeList<FollowDto>()
+        val bandIds = follows.map { it.bandId }
+        if (bandIds.isEmpty()) return emptyList()
+        val bands = supabase.postgrest["bands"]
+            .select { filter { isIn("id", bandIds) } }
+            .decodeList<BandDto>()
+        prefs.edit().putString("cached_followed_bands", Json.encodeToString(bands)).apply()
+        return bands
+    }
+
+    fun getCachedFollowedBands(): List<BandDto> {
+        val cachedJson = prefs.getString("cached_followed_bands", null) ?: return emptyList()
+        return try {
+            Json.decodeFromString(cachedJson)
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 

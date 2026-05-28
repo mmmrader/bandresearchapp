@@ -181,7 +181,8 @@ fun MainScreen(
                 onNavigateToPlaylists = onNavigateToPlaylists,
                 onNavigateToHistory = onNavigateToHistory,
                 onNavigateToSecurity = onNavigateToSecurity,
-                onNavigateToHelp = onNavigateToHelp
+                onNavigateToHelp = onNavigateToHelp,
+                onNavigateToBandDetail = onNavigateToBandDetail
             )
         }
     }

@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tkachukmo.bandresearchapp.core.player.AudioController
+import com.tkachukmo.bandresearchapp.core.notifications.NotificationSettingsRepository
 import com.tkachukmo.bandresearchapp.data.remote.dto.BandDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.FollowDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.HistoryDto
@@ -13,6 +14,9 @@ import com.tkachukmo.bandresearchapp.data.remote.dto.PlaylistDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.PlaylistTrackDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.ProfileDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.TrackDto
+import com.tkachukmo.bandresearchapp.data.remote.dto.VacancyDto
+import com.tkachukmo.bandresearchapp.data.remote.dto.ApplicationDto
+import com.tkachukmo.bandresearchapp.data.remote.dto.ApplicationInsertDto
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
@@ -74,7 +78,8 @@ data class PlaylistDetailTrack(
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
     private val supabaseClient: SupabaseClient,
-    private val audioController: AudioController
+    private val audioController: AudioController,
+    private val notificationSettingsRepository: NotificationSettingsRepository
 ) : ViewModel() {
 
     private val _isLoading = MutableStateFlow(true)
@@ -88,6 +93,12 @@ class ProfileViewModel @Inject constructor(
 
     private val _followedBands = MutableStateFlow<List<BandDto>>(emptyList())
     val followedBands: StateFlow<List<BandDto>> = _followedBands.asStateFlow()
+
+    private val _managedBand = MutableStateFlow<BandDto?>(null)
+    val managedBand: StateFlow<BandDto?> = _managedBand.asStateFlow()
+
+    private val _matchingVacancies = MutableStateFlow<List<VacancyDto>>(emptyList())
+    val matchingVacancies: StateFlow<List<VacancyDto>> = _matchingVacancies.asStateFlow()
 
     private val _playlists = MutableStateFlow<List<PlaylistDto>>(emptyList())
     val playlists: StateFlow<List<PlaylistDto>> = _playlists.asStateFlow()
@@ -110,6 +121,8 @@ class ProfileViewModel @Inject constructor(
     private val _passwordChangeState = MutableStateFlow<PasswordChangeState>(PasswordChangeState.Idle)
     val passwordChangeState: StateFlow<PasswordChangeState> = _passwordChangeState.asStateFlow()
 
+    val notificationsEnabled: StateFlow<Boolean> = notificationSettingsRepository.enabled
+
     init {
         loadUserProfile()
     }
@@ -120,6 +133,10 @@ class ProfileViewModel @Inject constructor(
 
     fun clearPasswordState() {
         _passwordChangeState.value = PasswordChangeState.Idle
+    }
+
+    fun setNotificationsEnabled(enabled: Boolean) {
+        notificationSettingsRepository.setEnabled(enabled)
     }
 
     private fun handleException(t: Throwable, defaultMessage: String) {
@@ -145,6 +162,10 @@ class ProfileViewModel @Inject constructor(
                     .select { filter { eq("id", userId) } }
                     .decodeSingleOrNull<ProfileDto>()
 
+                _managedBand.value = supabaseClient.postgrest["bands"]
+                    .select { filter { eq("manager_id", userId) } }
+                    .decodeSingleOrNull<BandDto>()
+
                 val follows = supabaseClient.postgrest["follows"]
                     .select { filter { eq("user_id", userId) } }
                     .decodeList<FollowDto>()
@@ -160,6 +181,7 @@ class ProfileViewModel @Inject constructor(
 
                 loadPlaylists()
                 loadHistoryData(userId)
+                loadMatchingVacancies()
 
             } catch (t: Throwable) {
                 handleException(t, "Помилка отримання даних")
@@ -377,6 +399,63 @@ class ProfileViewModel @Inject constructor(
     }
 
     // ==========================================
+    // ЗАВАНТАЖЕННЯ ТІЛЬКИ ВПОДОБАНИХ ТА ВІДСУТНІХ ТРЕКІВ
+    // ==========================================
+    fun loadLikedTracksForPlaylist(playlistId: String, query: String = "") {
+        viewModelScope.launch {
+            try {
+                val userId = supabaseClient.auth.currentUserOrNull()?.id ?: return@launch
+
+                // 1. Шукаємо плейлист "Улюблені"
+                val favPlaylist = supabaseClient.postgrest["playlists"]
+                    .select { filter { eq("user_id", userId); eq("name", "Улюблені") } }
+                    .decodeSingleOrNull<PlaylistDto>()
+
+                if (favPlaylist == null) {
+                    _availableTracks.value = emptyList()
+                    return@launch
+                }
+
+                // 2. Отримуємо ID всіх вподобаних треків
+                val likedTracks = supabaseClient.postgrest["playlist_tracks"]
+                    .select { filter { eq("playlist_id", favPlaylist.id) } }
+                    .decodeList<PlaylistTrackDto>()
+
+                val likedIds = likedTracks.map { it.trackId }
+
+                // 3. Отримуємо ID треків, які ВЖЕ Є в поточному плейлисті
+                val currentTracks = supabaseClient.postgrest["playlist_tracks"]
+                    .select { filter { eq("playlist_id", playlistId) } }
+                    .decodeList<PlaylistTrackDto>()
+
+                val currentIds = currentTracks.map { it.trackId }
+
+                // 4. Фільтруємо: залишаємо вподобані, яких ЩЕ НЕМАЄ в поточному
+                val availableIds = likedIds.filterNot { it in currentIds }
+
+                if (availableIds.isEmpty()) {
+                    _availableTracks.value = emptyList()
+                    return@launch
+                }
+
+                // 5. Завантажуємо самі треки з урахуванням пошукового запиту
+                _availableTracks.value = supabaseClient.postgrest["tracks"]
+                    .select {
+                        filter {
+                            isIn("id", availableIds)
+                            if (query.isNotBlank()) {
+                                ilike("title", "%$query%")
+                            }
+                        }
+                    }
+                    .decodeList<TrackDto>()
+
+            } catch (t: Throwable) {
+                handleException(t, "Помилка пошуку треків")
+            }
+        }
+    }
+    // ==========================================
     // ЗМІНА ПОРЯДКУ ТРЕКІВ У ПЛЕЙЛИСТІ
     // ==========================================
 
@@ -434,13 +513,15 @@ class ProfileViewModel @Inject constructor(
                 _listeningHistory.value = rawHistory.mapNotNull { hist ->
                     val track = tracks.find { it.id == hist.trackId } ?: return@mapNotNull null
                     val band = bands.find { it.id == track.bandId }
-                    HistoryTrackUI(
-                        historyId = hist.id ?: UUID.randomUUID().toString(),
-                        trackTitle = track.title,
-                        bandName = band?.name ?: "Невідомий виконавець",
-                        coverUrl = track.coverUrl,
-                        listenedAt = hist.listenedAt
-                    )
+                        HistoryTrackUI(
+                            historyId = hist.id ?: UUID.randomUUID().toString(),
+                            trackId = track.id,
+                            trackTitle = track.title,
+                            bandName = band?.name ?: "Невідомий виконавець",
+                            coverUrl = track.coverUrl,
+                            listenedAt = hist.listenedAt,
+                            durationSec = track.durationSec
+                        )
                 }
             } else {
                 _listeningHistory.value = emptyList()
@@ -458,7 +539,12 @@ class ProfileViewModel @Inject constructor(
         newName: String,
         newBio: String,
         newSocialLink: String,
-        newGenres: List<String>
+        newGenres: List<String>,
+        newInstrument: String, // ДОДАНО
+        newExperience: String, // ДОДАНО
+        newLocation: String,   // ДОДАНО
+        newYoutubeLink: String,// ДОДАНО
+        newAudioLink: String   // ДОДАНО
     ) {
         if (newName.isBlank()) {
             _errorMessage.value = "Будь ласка, введіть нікнейм"
@@ -474,21 +560,28 @@ class ProfileViewModel @Inject constructor(
                             set("bio", newBio)
                             set("social_link", newSocialLink)
                             set("music_genres", newGenres)
+                            set("instrument", newInstrument)
+                            set("experience", newExperience)
+                            set("location", newLocation)
+                            set("youtube_link", newYoutubeLink)
+                            set("audio_link", newAudioLink)
                         }
                     ) {
-                        filter {
-                            eq("id", userId)
-                        }
+                        filter { eq("id", userId) }
                     }
 
                 val currentProfile = _profile.value
-
                 if (currentProfile != null) {
                     _profile.value = currentProfile.copy(
                         displayName = newName,
                         bio = newBio,
                         socialLink = newSocialLink,
-                        musicGenres = newGenres
+                        musicGenres = newGenres,
+                        instrument = newInstrument,
+                        experience = newExperience,
+                        location = newLocation,
+                        youtubeLink = newYoutubeLink,
+                        audioLink = newAudioLink
                     )
                 }
 
@@ -496,6 +589,79 @@ class ProfileViewModel @Inject constructor(
 
             } catch (e: Exception) {
                 _errorMessage.value = "Помилка збереження: ${e.message}"
+            }
+        }
+    }
+
+    fun removeHistoryItem(historyId: String) {
+        viewModelScope.launch {
+            try {
+                supabaseClient.postgrest["history"].delete {
+                    filter { eq("id", historyId) }
+                }
+                _listeningHistory.value = _listeningHistory.value.filterNot { it.historyId == historyId }
+                _errorMessage.value = "Запис видалено з історії"
+            } catch (t: Throwable) {
+                handleException(t, "Помилка видалення запису")
+            }
+        }
+    }
+
+    fun clearListeningHistory() {
+        viewModelScope.launch {
+            val userId = supabaseClient.auth.currentUserOrNull()?.id ?: return@launch
+            try {
+                supabaseClient.postgrest["history"].delete {
+                    filter { eq("user_id", userId) }
+                }
+                _listeningHistory.value = emptyList()
+                _errorMessage.value = "Історію очищено"
+            } catch (t: Throwable) {
+                handleException(t, "Помилка очищення історії")
+            }
+        }
+    }
+
+    fun loadMatchingVacancies() {
+        viewModelScope.launch {
+            try {
+                val instrument = _profile.value?.instrument?.trim().orEmpty()
+                _matchingVacancies.value = if (instrument.isBlank()) {
+                    supabaseClient.postgrest["vacancies"]
+                        .select { filter { eq("is_active", true) } }
+                        .decodeList<VacancyDto>()
+                } else {
+                    supabaseClient.postgrest["vacancies"]
+                        .select { filter { eq("is_active", true); ilike("instrument", "%$instrument%") } }
+                        .decodeList<VacancyDto>()
+                }
+            } catch (_: Throwable) {
+                _matchingVacancies.value = emptyList()
+            }
+        }
+    }
+
+    fun applyForVacancy(vacancyId: String, message: String = "") {
+        viewModelScope.launch {
+            val userId = supabaseClient.auth.currentUserOrNull()?.id ?: return@launch
+            try {
+                val existing = supabaseClient.postgrest["applications"]
+                    .select { filter { eq("vacancy_id", vacancyId); eq("user_id", userId) } }
+                    .decodeList<ApplicationDto>()
+                if (existing.isNotEmpty()) {
+                    _errorMessage.value = "Ви вже відгукнулися на цю вакансію"
+                    return@launch
+                }
+                supabaseClient.postgrest["applications"].insert(
+                    ApplicationInsertDto(
+                        vacancyId = vacancyId,
+                        userId = userId,
+                        message = message.takeIf { it.isNotBlank() }
+                    )
+                )
+                _errorMessage.value = "Заявку надіслано"
+            } catch (t: Throwable) {
+                handleException(t, "Помилка відправки заявки")
             }
         }
     }

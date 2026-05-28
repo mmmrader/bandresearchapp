@@ -22,7 +22,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.tkachukmo.bandresearchapp.feature.catalog.ui.toBandCard
+import com.tkachukmo.bandresearchapp.feature.discover.ui.toBandCard
 import com.tkachukmo.bandresearchapp.feature.discover.viewmodel.SearchViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)

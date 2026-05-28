@@ -6,10 +6,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tkachukmo.bandresearchapp.core.player.AudioController
-import com.tkachukmo.bandresearchapp.data.remote.dto.BandDto
-import com.tkachukmo.bandresearchapp.data.remote.dto.ReleaseDto
-import com.tkachukmo.bandresearchapp.data.remote.dto.TrackDto
-import com.tkachukmo.bandresearchapp.data.remote.dto.VideoDto
+import com.tkachukmo.bandresearchapp.data.remote.dto.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
@@ -61,6 +58,15 @@ class BandManagerViewModel @Inject constructor(
     private val _releases = MutableStateFlow<List<ReleaseDto>>(emptyList())
     val releases: StateFlow<List<ReleaseDto>> = _releases.asStateFlow()
 
+    private val _events = MutableStateFlow<List<BandEventDto>>(emptyList())
+    val events: StateFlow<List<BandEventDto>> = _events.asStateFlow()
+
+    private val _vacancies = MutableStateFlow<List<VacancyDto>>(emptyList())
+    val vacancies: StateFlow<List<VacancyDto>> = _vacancies.asStateFlow()
+
+    private val _applications = MutableStateFlow<List<ApplicationDto>>(emptyList())
+    val applications: StateFlow<List<ApplicationDto>> = _applications.asStateFlow()
+
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
@@ -101,6 +107,8 @@ class BandManagerViewModel @Inject constructor(
                         loadReleases(band.id)
                         loadTracks(band.id)
                         loadVideos(band.id)
+                        loadEvents(band.id)
+                        loadVacancies(band.id)
                     }
                 }
             } catch (t: Throwable) { handleException(t, "Помилка завантаження даних") }
@@ -126,6 +134,72 @@ class BandManagerViewModel @Inject constructor(
         }
     }
 
+    private fun loadEvents(bandId: String) {
+        viewModelScope.launch {
+            try {
+                _events.value = supabaseClient.postgrest["band_events"]
+                    .select { filter { eq("band_id", bandId) } }
+                    .decodeList<BandEventDto>()
+                    .sortedByDescending { it.createdAt ?: it.eventDate ?: "" }
+            } catch (_: Throwable) {
+                _events.value = emptyList()
+            }
+        }
+    }
+
+    private fun loadVacancies(bandId: String) {
+        viewModelScope.launch {
+            try {
+                _vacancies.value = supabaseClient.postgrest["vacancies"]
+                    .select { filter { eq("band_id", bandId); eq("is_active", true) } }
+                    .decodeList<VacancyDto>()
+                loadApplications(bandId)
+            } catch (_: Throwable) {
+                _vacancies.value = emptyList()
+            }
+        }
+    }
+
+    private fun loadApplications(bandId: String) {
+        viewModelScope.launch {
+            try {
+                val vacancyIds = _vacancies.value.map { it.id }
+                _applications.value = if (vacancyIds.isEmpty()) {
+                    emptyList()
+                } else {
+                    supabaseClient.postgrest["applications"]
+                        .select { filter { isIn("vacancy_id", vacancyIds) } }
+                        .decodeList<ApplicationDto>()
+                        .sortedByDescending { it.createdAt ?: "" }
+                }
+            } catch (_: Throwable) {
+                _applications.value = emptyList()
+            }
+        }
+    }
+
+    private suspend fun createAutomaticEvent(
+        bandId: String,
+        title: String,
+        type: String,
+        description: String? = null,
+        smartLink: String? = null
+    ) {
+        try {
+            supabaseClient.postgrest["band_events"].insert(
+                BandEventInsertDto(
+                    bandId = bandId,
+                    title = title,
+                    description = description,
+                    type = type,
+                    smartLink = smartLink
+                )
+            )
+            loadEvents(bandId)
+        } catch (_: Throwable) {
+        }
+    }
+
     fun createRelease(context: Context, title: String, type: String, year: Int, coverUri: Uri?, onSuccess: () -> Unit) {
         val bandId = _currentBand.value?.id ?: return
         viewModelScope.launch(Dispatchers.IO) {
@@ -141,6 +215,12 @@ class BandManagerViewModel @Inject constructor(
                     }
                 }
                 supabaseClient.postgrest["releases"].insert(ReleaseInsertDto(bandId, title, type, year, coverUrl))
+                createAutomaticEvent(
+                    bandId = bandId,
+                    title = "Новий реліз: $title",
+                    type = "release",
+                    description = "Гурт опублікував ${type.uppercase()} $year року."
+                )
                 loadReleases(bandId)
                 onSuccess()
             } catch (t: Throwable) { handleException(t, "Помилка створення релізу") }
@@ -164,6 +244,13 @@ class BandManagerViewModel @Inject constructor(
             _isLoading.value = true
             try {
                 supabaseClient.postgrest["videos"].insert(VideoInsertDto(bandId, title, youtubeId, "https://img.youtube.com/vi/$youtubeId/hqdefault.jpg"))
+                createAutomaticEvent(
+                    bandId = bandId,
+                    title = "Новий кліп: $title",
+                    type = "video",
+                    description = "Відео вже доступне на YouTube.",
+                    smartLink = "https://www.youtube.com/watch?v=$youtubeId"
+                )
                 loadVideos(bandId)
                 onSuccess()
             } catch (t: Throwable) { handleException(t, "Помилка додавання відео") }
@@ -250,6 +337,143 @@ class BandManagerViewModel @Inject constructor(
     fun updateSelectedRelease(releaseId: String) { _selectedReleaseId.value = releaseId }
     fun clearUploadForm() { _selectedFileUri.value = null; _uploadTitle.value = ""; _uploadDuration.value = 0; _uploadArtwork.value = null; _errorMessage.value = null }
 
+    fun createManualEvent(
+        title: String,
+        description: String,
+        type: String,
+        eventDate: String,
+        venue: String,
+        city: String,
+        smartLink: String,
+        spotifyUrl: String,
+        appleMusicUrl: String,
+        youtubeMusicUrl: String,
+        onSuccess: () -> Unit
+    ) {
+        val bandId = _currentBand.value?.id ?: return
+        if (title.isBlank()) {
+            _errorMessage.value = "Назва події не може бути порожньою"
+            return
+        }
+        viewModelScope.launch {
+            try {
+                supabaseClient.postgrest["band_events"].insert(
+                    BandEventInsertDto(
+                        bandId = bandId,
+                        title = title,
+                        description = description.takeIf { it.isNotBlank() },
+                        type = type,
+                        eventDate = eventDate.takeIf { it.isNotBlank() },
+                        venue = venue.takeIf { it.isNotBlank() },
+                        city = city.takeIf { it.isNotBlank() },
+                        smartLink = smartLink.takeIf { it.isNotBlank() },
+                        spotifyUrl = spotifyUrl.takeIf { it.isNotBlank() },
+                        appleMusicUrl = appleMusicUrl.takeIf { it.isNotBlank() },
+                        youtubeMusicUrl = youtubeMusicUrl.takeIf { it.isNotBlank() }
+                    )
+                )
+                loadEvents(bandId)
+                _errorMessage.value = "Подію опубліковано"
+                onSuccess()
+            } catch (t: Throwable) {
+                handleException(t, "Помилка створення події")
+            }
+        }
+    }
+
+    fun createVacancy(instrument: String, description: String, city: String) {
+        val bandId = _currentBand.value?.id ?: return
+        if (instrument.isBlank()) {
+            _errorMessage.value = "Вкажіть інструмент для вакансії"
+            return
+        }
+        viewModelScope.launch {
+            try {
+                supabaseClient.postgrest["vacancies"].insert(
+                    VacancyInsertDto(
+                        bandId = bandId,
+                        instrument = instrument,
+                        description = description.takeIf { it.isNotBlank() },
+                        city = city.takeIf { it.isNotBlank() }
+                    )
+                )
+                loadVacancies(bandId)
+                _errorMessage.value = "Вакансію створено"
+            } catch (t: Throwable) {
+                handleException(t, "Помилка створення вакансії")
+            }
+        }
+    }
+
+    fun deleteVacancy(vacancyId: String) {
+        val bandId = _currentBand.value?.id ?: return
+        viewModelScope.launch {
+            try {
+                supabaseClient.postgrest["vacancies"].update({ set("is_active", false) }) {
+                    filter { eq("id", vacancyId) }
+                }
+                loadVacancies(bandId)
+                _errorMessage.value = "Вакансію закрито"
+            } catch (t: Throwable) {
+                handleException(t, "Помилка видалення вакансії")
+            }
+        }
+    }
+
+    fun updateApplicationStatus(application: ApplicationDto, status: String) {
+        viewModelScope.launch {
+            try {
+                supabaseClient.postgrest["applications"].update({ set("status", status) }) {
+                    filter { eq("id", application.id) }
+                }
+                supabaseClient.postgrest["notifications"].insert(
+                    NotificationInsertDto(
+                        userId = application.userId,
+                        type = "application_status",
+                        title = if (status == "accepted") "Заявку прийнято" else "Заявку відхилено",
+                        body = if (status == "accepted") {
+                            "Гурт прийняв вашу заявку. Очікуйте повідомлення від адміністратора."
+                        } else {
+                            "Гурт відхилив вашу заявку. Спробуйте інші вакансії."
+                        }
+                    )
+                )
+                _currentBand.value?.id?.let { loadApplications(it) }
+                _errorMessage.value = "Статус заявки оновлено"
+            } catch (t: Throwable) {
+                handleException(t, "Помилка оновлення заявки")
+            }
+        }
+    }
+
+    fun sendMessageToCandidate(application: ApplicationDto, text: String) {
+        if (text.isBlank()) return
+        val senderId = supabaseClient.auth.currentUserOrNull()?.id ?: return
+        viewModelScope.launch {
+            try {
+                supabaseClient.postgrest["chat_messages"].insert(
+                    ChatMessageInsertDto(
+                        senderId = senderId,
+                        recipientId = application.userId,
+                        bandId = _currentBand.value?.id,
+                        text = text
+                    )
+                )
+                supabaseClient.postgrest["notifications"].insert(
+                    NotificationInsertDto(
+                        userId = application.userId,
+                        type = "message",
+                        title = "Повідомлення від гурту",
+                        body = text
+                    )
+                )
+                _errorMessage.value = "Повідомлення надіслано"
+            } catch (t: Throwable) {
+                handleException(t, "Помилка надсилання повідомлення")
+            }
+        }
+    }
+
     fun uploadTrack(context: Context, onSuccess: () -> Unit) {
         val bandId = _currentBand.value?.id ?: return
         val fileUri = _selectedFileUri.value ?: return
@@ -272,6 +496,13 @@ class BandManagerViewModel @Inject constructor(
                 }
 
                 supabaseClient.postgrest["tracks"].insert(TrackInsertDto(band_id = bandId, release_id = relId, title = _uploadTitle.value, duration_sec = _uploadDuration.value, audio_url = audioUrl, cover_url = coverUrl))
+                createAutomaticEvent(
+                    bandId = bandId,
+                    title = "Новий трек: ${_uploadTitle.value}",
+                    type = "release",
+                    description = "Трек додано до каталогу гурту.",
+                    smartLink = audioUrl
+                )
                 clearUploadForm()
                 loadTracks(bandId)
                 onSuccess()

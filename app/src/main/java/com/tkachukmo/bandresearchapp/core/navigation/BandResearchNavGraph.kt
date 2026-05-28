@@ -176,10 +176,19 @@ fun BandResearchNavGraph(
 
             BandDetailScreen(
                 bandId = bandId,
-                onNavigateBack = { navController.popBackStack() },
+
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+
                 onPlayTrack = { track ->
                     navController.navigate("${Routes.PLAYER_BASE}/${track.id}")
                 },
+
+                onNavigateToPlayer = { trackId ->
+                    navController.navigate("${Routes.PLAYER_BASE}/$trackId")
+                },
+
                 onNavigateToTab = { tabIndex ->
                     navController.navigate("${Routes.MAIN_BASE}?tabIndex=$tabIndex") {
                         popUpTo(Routes.MAIN_BASE) { inclusive = true }
@@ -187,7 +196,6 @@ fun BandResearchNavGraph(
                 }
             )
         }
-
         // -------------------- PLAYER --------------------
 
         composable(
@@ -207,7 +215,14 @@ fun BandResearchNavGraph(
 
             PlayerScreen(
                 trackId = trackId,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = {
+                    val popped = navController.popBackStack()
+                    if (!popped) {
+                        navController.navigate(Routes.MAIN_BASE) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    }
+                }
             )
         }
 
@@ -229,6 +244,9 @@ fun BandResearchNavGraph(
                 onNavigateToHistory = { navController.navigate(Routes.HISTORY) },
                 onNavigateToSecurity = { navController.navigate(Routes.SECURITY) },
                 onNavigateToHelp = { navController.navigate(Routes.HELP) },
+                onNavigateToBandDetail = { bandId ->
+                    navController.navigate("${Routes.BAND_DETAIL_BASE}/$bandId")
+                },
                 onLogout = {
                     navController.navigate(Routes.LOGIN) {
                         popUpTo(0) { inclusive = true }

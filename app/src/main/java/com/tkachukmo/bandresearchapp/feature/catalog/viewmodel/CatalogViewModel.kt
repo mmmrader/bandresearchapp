@@ -21,31 +21,37 @@ class CatalogViewModel @Inject constructor(
     private val _bands = MutableStateFlow<List<BandDto>>(emptyList())
     val bands: StateFlow<List<BandDto>> = _bands.asStateFlow()
 
+    // ДОДАНО: Окремий стейт для топу гуртів
+    private val _topBands = MutableStateFlow<List<BandDto>>(emptyList())
+    val topBands: StateFlow<List<BandDto>> = _topBands.asStateFlow()
+
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    // ДОДАНО: Стан для повідомлень про відсутність інтернету
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
     init {
-        loadBands()
+        loadBandsAndTop()
     }
 
-    // ДОДАНО: Очищення повідомлення після показу
     fun clearError() {
         _errorMessage.value = null
     }
 
-    private fun loadBands() {
+    private fun loadBandsAndTop() {
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
             try {
-                // Пробуємо завантажити нові дані з Supabase
-                _bands.value = bandRepository.getAllBands()
+                // Завантажуємо підписки для верхнього списку
+                _bands.value = bandRepository.getFollowedBands()
+
+                // Завантажуємо ВСІ гурти і сортуємо їх для топу
+                val allBands = bandRepository.getAllBands()
+                _topBands.value = allBands.sortedByDescending { it.followersCount }
+
             } catch (e: Exception) {
-                // ОБРОБКА ВІДСУТНОСТІ ІНТЕРНЕТУ
                 e.printStackTrace()
                 val errorMsg = e.localizedMessage ?: ""
 
@@ -55,8 +61,10 @@ class CatalogViewModel @Inject constructor(
                     _errorMessage.value = "Помилка завантаження даних."
                 }
 
-                // Якщо впали з помилкою, дістаємо дані з локального кешу
-                _bands.value = bandRepository.getCachedBands()
+                // Локальний фолбек
+                _bands.value = bandRepository.getCachedFollowedBands()
+                val cachedAll = bandRepository.getCachedBands()
+                _topBands.value = cachedAll.sortedByDescending { it.followersCount }
             } finally {
                 _isLoading.value = false
             }

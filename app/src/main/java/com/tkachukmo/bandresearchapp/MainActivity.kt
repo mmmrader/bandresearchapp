@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.tkachukmo.bandresearchapp.core.navigation.BandResearchNavGraph
 import com.tkachukmo.bandresearchapp.core.navigation.Routes
+import com.tkachukmo.bandresearchapp.core.notifications.NotificationMonitor
 import com.tkachukmo.bandresearchapp.core.ui.theme.BandResearchAppTheme
 import dagger.hilt.android.AndroidEntryPoint
 import io.github.jan.supabase.SupabaseClient
@@ -30,6 +31,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var supabaseClient: SupabaseClient
+
+    @Inject
+    lateinit var notificationMonitor: NotificationMonitor
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,6 +50,12 @@ class MainActivity : ComponentActivity() {
                     var startRoute by rememberSaveable { mutableStateOf<String?>(null) }
 
                     LaunchedEffect(sessionStatus) {
+                        if (sessionStatus is SessionStatus.Authenticated) {
+                            notificationMonitor.start()
+                        } else if (sessionStatus is SessionStatus.NotAuthenticated) {
+                            notificationMonitor.stop()
+                        }
+
                         if (startRoute == null) {
                             // Встановлюємо маршрут лише при найпершому холодному старті
                             when (sessionStatus) {
@@ -76,5 +86,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        notificationMonitor.stop()
+        super.onDestroy()
     }
 }

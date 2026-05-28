@@ -1,4 +1,4 @@
-package com.tkachukmo.bandresearchapp.feature.discover.ui
+﻿package com.tkachukmo.bandresearchapp.feature.discover.ui
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
@@ -44,8 +44,8 @@ fun MiniPlayer(
 
     var isDismissed by remember { mutableStateOf(false) }
 
-    // Запам'ятовуємо останній трек,
-    // щоб уникнути крашу під час анімації зникнення
+    // Р—Р°РїР°Рј'СЏС‚РѕРІСѓС”РјРѕ РѕСЃС‚Р°РЅРЅС–Р№ С‚СЂРµРє,
+    // С‰РѕР± СѓРЅРёРєРЅСѓС‚Рё РєСЂР°С€Сѓ РїС–Рґ С‡Р°СЃ Р°РЅС–РјР°С†С–С— Р·РЅРёРєРЅРµРЅРЅСЏ
     var rememberedTrack by remember {
         mutableStateOf<TrackDto?>(null)
     }
@@ -67,7 +67,7 @@ fun MiniPlayer(
         ) + fadeOut()
     ) {
 
-        // Безпечний трек
+        // Р‘РµР·РїРµС‡РЅРёР№ С‚СЂРµРє
         val track = rememberedTrack ?: return@AnimatedVisibility
 
         val displayTitle = extractedTitle ?: track.title
@@ -116,7 +116,7 @@ fun MiniPlayer(
 
                             if (absX > absY) {
 
-                                // Свайпи вліво / вправо
+                                // РЎРІР°Р№РїРё РІР»С–РІРѕ / РІРїСЂР°РІРѕ
                                 if (dragOffsetX < -100f) {
                                     viewModel.audioController.skipToPrevious()
                                 } else if (dragOffsetX > 100f) {
@@ -125,24 +125,24 @@ fun MiniPlayer(
 
                             } else {
 
-                                // Свайпи вверх / вниз
+                                // РЎРІР°Р№РїРё РІРІРµСЂС… / РІРЅРёР·
                                 if (dragOffsetY < -50f) {
 
-                                    // Відкрити повний плеєр
+                                    // Р’С–РґРєСЂРёС‚Рё РїРѕРІРЅРёР№ РїР»РµС”СЂ
                                     onNavigateToPlayer(track.id)
 
                                 } else if (dragOffsetY > 100f) {
 
-                                    // Приховати mini player
+                                    // РџСЂРёС…РѕРІР°С‚Рё mini player
                                     isDismissed = true
 
-                                    // Даємо анімації завершитись
-                                    // перед очищенням MediaItems
+                                    // Р”Р°С”РјРѕ Р°РЅС–РјР°С†С–С— Р·Р°РІРµСЂС€РёС‚РёСЃСЊ
+                                    // РїРµСЂРµРґ РѕС‡РёС‰РµРЅРЅСЏРј MediaItems
                                     viewModel.audioController.stopAndClear()
                                 }
                             }
 
-                            // Повертаємо назад
+                            // РџРѕРІРµСЂС‚Р°С”РјРѕ РЅР°Р·Р°Рґ
                             dragOffsetX = 0f
                             dragOffsetY = 0f
                         }
@@ -221,7 +221,7 @@ fun MiniPlayer(
                     } else {
 
                         Text(
-                            text = "🎵",
+                            text = "♪",
                             color = Color.White
                         )
                     }

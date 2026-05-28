@@ -209,6 +209,45 @@ class AudioController @Inject constructor(
         }
     }
 
+    // ДОДАНО: Add track to queue
+    fun addTrackToQueue(
+        track: TrackDto,
+        bandName: String
+    ) {
+
+        val currentQueue =
+            _currentPlaylist.value.toMutableList()
+
+        currentQueue.add(track)
+
+        // Оновлюємо стан для UI
+        _currentPlaylist.value = currentQueue
+
+        mediaController?.let { controller ->
+
+            val metadata =
+                MediaMetadata.Builder()
+                    .setTitle(track.title)
+                    .setArtist(bandName)
+                    .setArtworkUri(
+                        track.coverUrl?.let {
+                            Uri.parse(it)
+                        }
+                    )
+                    .build()
+
+            val mediaItem =
+                MediaItem.Builder()
+                    .setUri(track.audioUrl ?: "")
+                    .setMediaId(track.id)
+                    .setMediaMetadata(metadata)
+                    .build()
+
+            // Додаємо трек у поточну чергу
+            controller.addMediaItem(mediaItem)
+        }
+    }
+
     // Play / Pause
     fun playPause() {
 
@@ -310,8 +349,12 @@ class AudioController @Inject constructor(
         _currentPlaylist.value = emptyList()
         _isPlaying.value = false
     }
+
+    // Skip to specific index
     fun skipToIndex(index: Int) {
+
         mediaController?.let {
+
             it.seekToDefaultPosition(index)
             it.play()
         }

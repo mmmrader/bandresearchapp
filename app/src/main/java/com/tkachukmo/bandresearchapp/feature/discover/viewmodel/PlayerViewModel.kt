@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tkachukmo.bandresearchapp.core.player.AudioController
 import com.tkachukmo.bandresearchapp.data.remote.BandRepository
+import com.tkachukmo.bandresearchapp.data.remote.dto.HistoryDto
+import com.tkachukmo.bandresearchapp.data.remote.dto.HistoryUpsertDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.PlaylistDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.PlaylistInsertDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.PlaylistTrackDto
@@ -20,6 +22,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import javax.inject.Inject
 
 @HiltViewModel
@@ -49,8 +55,16 @@ class PlayerViewModel @Inject constructor(
     private val _isLiked = MutableStateFlow(false)
     val isLiked: StateFlow<Boolean> = _isLiked.asStateFlow()
 
+    private val _uniqueListenersCount = MutableStateFlow(0)
+    val uniqueListenersCount: StateFlow<Int> = _uniqueListenersCount.asStateFlow()
+
     private val _upcomingTracks = MutableStateFlow<List<TrackDto>>(emptyList())
     val upcomingTracks: StateFlow<List<TrackDto>> = _upcomingTracks.asStateFlow()
+    // Плейлисти користувача
+    private val _playlists = MutableStateFlow<List<PlaylistDto>>(emptyList())
+    val playlists: StateFlow<List<PlaylistDto>> = _playlists.asStateFlow()
+
+    private var lastRecordedTrackId: String? = null
 
     init {
         // Оновлення прогресу
@@ -68,6 +82,7 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             track.collect { currentTrack ->
                 if (currentTrack != null) {
+                    _uniqueListenersCount.value = currentTrack.playsCount
                     try {
                         val band = bandRepository.getBandById(currentTrack.bandId)
                         // Якщо bandId порожній (трек з плейліста) — залишаємо поточне значення
@@ -75,7 +90,9 @@ class PlayerViewModel @Inject constructor(
                             _bandName.value = band?.name ?: "Невідомий виконавець"
                         }
                         checkIfTrackIsLiked(currentTrack.id)
+                        recordUniqueListen(currentTrack.id)
                     } catch (e: Exception) {
+                        recordUniqueListen(currentTrack.id)
                         // Не перезаписуємо bandName якщо помилка (для плейлистів це нормально)
                     }
                 }
@@ -279,6 +296,81 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+// ==========================================
+// PLAYLISTS
+// ==========================================
+
+    fun loadUserPlaylists() {
+        viewModelScope.launch {
+            try {
+                val userId = supabaseClient.auth.currentUserOrNull()?.id
+                    ?: return@launch
+
+                _playlists.value = supabaseClient.postgrest["playlists"]
+                    .select {
+                        filter {
+                            eq("user_id", userId)
+                        }
+                    }
+                    .decodeList<PlaylistDto>()
+
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun addTrackToPlaylist(
+        playlistId: String,
+        trackId: String
+    ) {
+        viewModelScope.launch {
+            try {
+
+                // Перевірка чи трек вже існує
+                val existing =
+                    supabaseClient.postgrest["playlist_tracks"]
+                        .select {
+                            filter {
+                                eq("playlist_id", playlistId)
+                                eq("track_id", trackId)
+                            }
+                        }
+                        .decodeList<PlaylistTrackDto>()
+
+                if (existing.isNotEmpty()) {
+                    return@launch
+                }
+
+                // Отримуємо останню позицію
+                val currentTracks =
+                    supabaseClient.postgrest["playlist_tracks"]
+                        .select {
+                            filter {
+                                eq("playlist_id", playlistId)
+                            }
+                        }
+                        .decodeList<PlaylistTrackDto>()
+
+                val nextPosition =
+                    (currentTracks.maxOfOrNull { it.position } ?: 0) + 1
+
+                // Додаємо трек
+                val newTrackDto =
+                    PlaylistTrackInsertDto(
+                        playlistId = playlistId,
+                        trackId = trackId,
+                        position = nextPosition
+                    )
+
+                supabaseClient.postgrest["playlist_tracks"]
+                    .insert(newTrackDto)
+
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
     // ==========================================
     // CONTROLS
     // ==========================================
@@ -289,9 +381,79 @@ class PlayerViewModel @Inject constructor(
         _progress.value = position
         audioController.seekTo(position)
     }
+    fun addTrackToQueue(track: TrackDto, bandName: String) {
+        audioController.addTrackToQueue(track, bandName)
+    }
 
     fun skipToNext() = audioController.skipToNext()
     fun skipToPrevious() = audioController.skipToPrevious()
     fun toggleShuffle() = audioController.toggleShuffle()
     fun toggleRepeat() = audioController.toggleRepeat()
+
+    private fun recordUniqueListen(trackId: String) {
+        if (lastRecordedTrackId == trackId) return
+        lastRecordedTrackId = trackId
+
+        viewModelScope.launch {
+            try {
+                val userId = supabaseClient.auth.currentUserOrNull()?.id ?: return@launch
+                val listenedAt = currentIsoTimestamp()
+
+                val existingHistory = supabaseClient.postgrest["history"]
+                    .select {
+                        filter {
+                            eq("user_id", userId)
+                            eq("track_id", trackId)
+                        }
+                    }
+                    .decodeList<HistoryDto>()
+
+                if (existingHistory.isEmpty()) {
+                    supabaseClient.postgrest["history"].insert(
+                        HistoryUpsertDto(
+                            userId = userId,
+                            trackId = trackId,
+                            listenedAt = listenedAt
+                        )
+                    )
+                } else {
+                    supabaseClient.postgrest["history"].update(
+                        { set("listened_at", listenedAt) }
+                    ) {
+                        filter {
+                            eq("user_id", userId)
+                            eq("track_id", trackId)
+                        }
+                    }
+                }
+
+                refreshUniqueListenersCount(trackId)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    private suspend fun refreshUniqueListenersCount(trackId: String) {
+        val uniqueListeners = supabaseClient.postgrest["history"]
+            .select { filter { eq("track_id", trackId) } }
+            .decodeList<HistoryDto>()
+            .map { it.userId }
+            .distinct()
+            .size
+
+        _uniqueListenersCount.value = uniqueListeners
+
+        supabaseClient.postgrest["tracks"].update(
+            { set("plays_count", uniqueListeners) }
+        ) {
+            filter { eq("id", trackId) }
+        }
+    }
+
+    private fun currentIsoTimestamp(): String {
+        val formatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
+        formatter.timeZone = TimeZone.getTimeZone("UTC")
+        return formatter.format(Date())
+    }
 }

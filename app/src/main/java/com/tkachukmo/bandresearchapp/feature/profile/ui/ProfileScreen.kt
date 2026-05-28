@@ -1,5 +1,9 @@
 package com.tkachukmo.bandresearchapp.feature.profile.ui
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -26,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import com.canhub.cropper.CropImageContract
@@ -34,6 +39,7 @@ import com.canhub.cropper.CropImageOptions
 import com.canhub.cropper.CropImageView
 import com.tkachukmo.bandresearchapp.data.remote.dto.BandDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.PlaylistDto
+import com.tkachukmo.bandresearchapp.data.remote.dto.VacancyDto
 import com.tkachukmo.bandresearchapp.feature.profile.viewmodel.ProfileViewModel
 
 // ==========================================
@@ -73,23 +79,28 @@ fun ProfileScreen(
     onNavigateToHistory: () -> Unit = {},
     onNavigateToSecurity: () -> Unit = {},
     onNavigateToHelp: () -> Unit = {},
+    onNavigateToBandDetail: (String) -> Unit = {},
     onLogout: () -> Unit = {},
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
-    var notificationsEnabled by remember { mutableStateOf(true) }
 
     val isLoading by viewModel.isLoading.collectAsState()
     val userEmail by viewModel.userEmail.collectAsState()
     val profile by viewModel.profile.collectAsState()
     val followedBands by viewModel.followedBands.collectAsState()
+    val managedBand by viewModel.managedBand.collectAsState()
+    val matchingVacancies by viewModel.matchingVacancies.collectAsState()
     val playlists by viewModel.playlists.collectAsState()
     val history by viewModel.listeningHistory.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
+    val notificationsEnabled by viewModel.notificationsEnabled.collectAsState()
+    val effectiveNotificationsEnabled = notificationsEnabled && canPostNotifications(context)
 
     val displayName = profile?.displayName ?: "Користувач"
     val initials = displayName.take(2).uppercase()
     val userGenres = profile?.musicGenres ?: emptyList()
+    var showMatchingVacancies by remember { mutableStateOf(false) }
 
     // Snackbar
     val snackbarHostState = remember { SnackbarHostState() }
@@ -98,6 +109,12 @@ fun ProfileScreen(
             snackbarHostState.showSnackbar(it)
             viewModel.clearError()
         }
+    }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        viewModel.setNotificationsEnabled(granted)
     }
 
     val imageCropLauncher = rememberLauncherForActivityResult(CropImageContract()) { result ->
@@ -126,6 +143,12 @@ fun ProfileScreen(
     }
 
     LaunchedEffect(Unit) { viewModel.loadUserProfile() }
+
+    LaunchedEffect(notificationsEnabled) {
+        if (notificationsEnabled && !canPostNotifications(context)) {
+            viewModel.setNotificationsEnabled(false)
+        }
+    }
 
     Scaffold(
         containerColor = DarkBg,
@@ -230,6 +253,19 @@ fun ProfileScreen(
 
                     // --- КАБІНЕТ ГУРТУ ---
                     item {
+                        if (managedBand == null) {
+                            NoBandActionsCard(
+                                instrument = profile?.instrument,
+                                vacancies = matchingVacancies,
+                                showVacancies = showMatchingVacancies,
+                                onToggleVacancies = {
+                                    showMatchingVacancies = !showMatchingVacancies
+                                    viewModel.loadMatchingVacancies()
+                                },
+                                onCreateBand = onNavigateToBandManager,
+                                onApply = { vacancyId -> viewModel.applyForVacancy(vacancyId) }
+                            )
+                        } else {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -270,6 +306,7 @@ fun ProfileScreen(
                                 }
                                 Icon(Icons.Default.ChevronRight, null, tint = NeonPurple)
                             }
+                        }
                         }
                         Spacer(modifier = Modifier.height(16.dp))
                     }
@@ -324,7 +361,10 @@ fun ProfileScreen(
                                 horizontalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
                                 items(followedBands) { band ->
-                                    FollowedBandItem(band = band, onClick = {})
+                                    FollowedBandItem(
+                                        band = band,
+                                        onClick = { onNavigateToBandDetail(band.id) }
+                                    )
                                 }
                             }
                         }
@@ -384,8 +424,18 @@ fun ProfileScreen(
                                     hasSwitch = true,
                                     hasArrow = false
                                 ),
-                                switchValue = notificationsEnabled,
-                                onSwitchChange = { notificationsEnabled = it },
+                                switchValue = effectiveNotificationsEnabled,
+                                onSwitchChange = { enabled ->
+                                    if (!enabled) {
+                                        viewModel.setNotificationsEnabled(false)
+                                    } else if (canPostNotifications(context)) {
+                                        viewModel.setNotificationsEnabled(true)
+                                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    } else {
+                                        viewModel.setNotificationsEnabled(true)
+                                    }
+                                },
                                 onClick = {}
                             )
                             HorizontalDivider(color = SurfaceVariantDark)
@@ -432,6 +482,67 @@ fun ProfileScreen(
 // ==========================================
 // КАСТОМНІ КОМПОНЕНТИ
 // ==========================================
+
+@Composable
+fun NoBandActionsCard(
+    instrument: String?,
+    vacancies: List<VacancyDto>,
+    showVacancies: Boolean,
+    onToggleVacancies: () -> Unit,
+    onCreateBand: () -> Unit,
+    onApply: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(SurfaceDark)
+            .border(1.dp, SurfaceVariantDark, RoundedCornerShape(16.dp))
+            .padding(16.dp)
+    ) {
+        Text("Ви ще не в гурті", color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(
+            text = instrument?.takeIf { it.isNotBlank() }?.let { "Пошук вакансій для: $it" }
+                ?: "Додайте інструмент у профілі, щоб пошук був точнішим",
+            color = TextGray,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+        Spacer(modifier = Modifier.height(14.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(onClick = onCreateBand, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = NeonPurple, contentColor = DarkBg)) {
+                Text("Створити гурт")
+            }
+            OutlinedButton(onClick = onToggleVacancies, modifier = Modifier.weight(1f)) {
+                Text("Вступити")
+            }
+        }
+        if (showVacancies) {
+            Spacer(modifier = Modifier.height(12.dp))
+            if (vacancies.isEmpty()) {
+                Text("Підходящих вакансій поки немає", color = TextGray)
+            } else {
+                vacancies.take(5).forEach { vacancy ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(Icons.Default.PersonSearch, null, tint = NeonPurple)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(vacancy.instrument, color = Color.White, fontWeight = FontWeight.SemiBold)
+                            Text(vacancy.city ?: "Місто не вказано", color = TextGray, style = MaterialTheme.typography.bodySmall)
+                        }
+                        TextButton(onClick = { onApply(vacancy.id) }) {
+                            Text("Заявка")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun FollowedBandItem(band: BandDto, onClick: () -> Unit) {
@@ -542,4 +653,12 @@ fun ProfileMenuItemRow(
             Icon(Icons.Default.ChevronRight, null, tint = TextGray, modifier = Modifier.size(24.dp))
         }
     }
+}
+
+private fun canPostNotifications(context: Context): Boolean {
+    return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
 }
