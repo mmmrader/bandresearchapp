@@ -1,0 +1,12 @@
+<component name="libraryTable">
+  <library name="feature">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/java/com/tkachukmo/bandresearchapp/feature/auth.zip!/" />
+      <root url="jar://$PROJECT_DIR$/java/com/tkachukmo/bandresearchapp/feature/discover.zip!/" />
+      <root url="jar://$PROJECT_DIR$/java/com/tkachukmo/bandresearchapp/feature/catalog.zip!/" />
+      <root url="jar://$PROJECT_DIR$/java/com/tkachukmo/bandresearchapp/feature/profile.zip!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

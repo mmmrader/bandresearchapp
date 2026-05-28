@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BandResearch Admin</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main id="login" class="login-shell" hidden>
+      <section class="login-panel">
+        <div class="brand-mark">BR</div>
+        <h1>BandResearch Admin</h1>
+        <p>Закритий вхід для керування даними додатку.</p>
+        <form id="loginForm" class="login-form">
+          <label>
+            Пошта
+            <input name="email" type="email" autocomplete="username" required />
+          </label>
+          <label>
+            Пароль
+            <input name="password" type="password" autocomplete="current-password" required />
+          </label>
+          <button type="submit">Увійти</button>
+          <output id="loginError" class="error"></output>
+        </form>
+      </section>
+    </main>
+
+    <main id="app" class="app-shell" hidden>
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">BR</div>
+          <div>
+            <strong>BandResearch</strong>
+            <span>Admin panel</span>
+          </div>
+        </div>
+        <nav>
+          <button class="nav-item active" data-view="dashboard">Статистика</button>
+          <div id="tableNav"></div>
+        </nav>
+        <button id="logout" class="ghost-button">Вийти</button>
+      </aside>
+
+      <section class="content">
+        <header class="topbar">
+          <div>
+            <p id="eyebrow">Огляд</p>
+            <h1 id="pageTitle">Статистика</h1>
+          </div>
+          <button id="refresh" class="icon-button" title="Оновити">↻</button>
+        </header>
+
+        <section id="dashboardView" class="view">
+          <div id="statCards" class="stat-grid"></div>
+          <div class="dashboard-grid">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Топ гуртів</h2>
+                <span>за прослуховуваннями</span>
+              </div>
+              <div id="topBands" class="list"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Топ треків</h2>
+                <span>за прослуховуваннями</span>
+              </div>
+              <div id="topTracks" class="list"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Останні прослуховування</h2>
+                <span>history</span>
+              </div>
+              <div id="recentHistory" class="list"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Непрочитані сповіщення</h2>
+                <span>notifications</span>
+              </div>
+              <div id="unreadNotifications" class="list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="tableView" class="view" hidden>
+          <div class="table-tools">
+            <input id="search" type="search" placeholder="Пошук у таблиці" />
+            <button id="createRow">Створити запис</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead id="tableHead"></thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+          <footer class="pager">
+            <button id="prevPage">Назад</button>
+            <span id="pageInfo"></span>
+            <button id="nextPage">Далі</button>
+          </footer>
+        </section>
+      </section>
+    </main>
+
+    <dialog id="editor">
+      <form method="dialog" class="editor-form">
+        <header>
+          <h2 id="editorTitle">Запис</h2>
+          <button value="cancel" class="icon-button">×</button>
+        </header>
+        <div id="editorFields" class="fields"></div>
+        <footer>
+          <button id="deleteRow" type="button" class="danger">Видалити</button>
+          <span></span>
+          <button value="cancel" type="submit" class="ghost-button">Скасувати</button>
+          <button id="saveRow" type="button">Зберегти</button>
+        </footer>
+        <output id="editorError" class="error"></output>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" hidden></div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
