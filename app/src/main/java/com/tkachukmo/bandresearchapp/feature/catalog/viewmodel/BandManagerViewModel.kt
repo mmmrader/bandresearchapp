@@ -7,38 +7,38 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tkachukmo.bandresearchapp.core.player.AudioController
 import com.tkachukmo.bandresearchapp.data.remote.dto.BandDto
+import com.tkachukmo.bandresearchapp.data.remote.dto.ReleaseDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.TrackDto
+import com.tkachukmo.bandresearchapp.data.remote.dto.VideoDto
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.storage.storage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
-import java.net.ConnectException
-import java.net.UnknownHostException
 import java.util.UUID
+import java.util.regex.Pattern
 import javax.inject.Inject
 
 @Serializable
-data class BandInsertDto(
-    val name: String,
-    val slug: String,
-    val genres: List<String>,
-    val manager_id: String
-)
+data class BandInsertDto(val name: String, val slug: String, val genres: List<String>, val manager_id: String)
 
 @Serializable
-data class TrackInsertDto(
-    val band_id: String,
-    val title: String,
-    val duration_sec: Int,
-    val audio_url: String,
-    val cover_url: String? = null
-)
+data class TrackInsertDto(val band_id: String, val release_id: String? = null, val title: String, val duration_sec: Int, val audio_url: String, val cover_url: String? = null)
+
+@Serializable
+data class BandUpdateDto(val name: String? = null, val description: String? = null, val avatar_url: String? = null, val cover_url: String? = null)
+
+@Serializable
+data class VideoInsertDto(val band_id: String, val title: String, val youtube_id: String, val thumbnail_url: String)
+
+@Serializable
+data class ReleaseInsertDto(val band_id: String, val title: String, val release_type: String, val release_year: Int, val cover_url: String? = null)
 
 @HiltViewModel
 class BandManagerViewModel @Inject constructor(
@@ -55,6 +55,12 @@ class BandManagerViewModel @Inject constructor(
     private val _tracks = MutableStateFlow<List<TrackDto>>(emptyList())
     val tracks: StateFlow<List<TrackDto>> = _tracks.asStateFlow()
 
+    private val _videos = MutableStateFlow<List<VideoDto>>(emptyList())
+    val videos: StateFlow<List<VideoDto>> = _videos.asStateFlow()
+
+    private val _releases = MutableStateFlow<List<ReleaseDto>>(emptyList())
+    val releases: StateFlow<List<ReleaseDto>> = _releases.asStateFlow()
+
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
@@ -70,20 +76,17 @@ class BandManagerViewModel @Inject constructor(
     private val _uploadArtwork = MutableStateFlow<ByteArray?>(null)
     val uploadArtwork: StateFlow<ByteArray?> = _uploadArtwork.asStateFlow()
 
-    init {
-        checkUserBand()
+    private val _selectedReleaseId = MutableStateFlow<String?>(null)
+    val selectedReleaseId: StateFlow<String?> = _selectedReleaseId.asStateFlow()
+
+    init { checkUserBand() }
+
+    private fun handleException(t: Throwable, defaultMessage: String) {
+        t.printStackTrace()
+        _errorMessage.value = "$defaultMessage: ${t.javaClass.simpleName}"
     }
 
-    // --- УНІВЕРСАЛЬНИЙ ОБРОБНИК ПОМИЛОК ІНТЕРНЕТУ ---
-    private fun handleNetworkError(e: Exception, defaultMessage: String) {
-        e.printStackTrace()
-        val errorMsg = e.localizedMessage ?: ""
-        if (e is UnknownHostException || e is ConnectException || errorMsg.contains("Unable to resolve host")) {
-            _errorMessage.value = "Відсутнє підключення до інтернету. Перевірте з'єднання."
-        } else {
-            _errorMessage.value = "$defaultMessage: ${e.message}"
-        }
-    }
+    fun clearError() { _errorMessage.value = null }
 
     fun checkUserBand() {
         viewModelScope.launch {
@@ -92,122 +95,170 @@ class BandManagerViewModel @Inject constructor(
             try {
                 val userId = supabaseClient.auth.currentUserOrNull()?.id
                 if (userId != null) {
-                    val band = supabaseClient.postgrest["bands"]
-                        .select { filter { eq("manager_id", userId) } }
-                        .decodeSingleOrNull<BandDto>()
+                    val band = supabaseClient.postgrest["bands"].select { filter { eq("manager_id", userId) } }.decodeSingleOrNull<BandDto>()
                     _currentBand.value = band
-
                     if (band != null) {
+                        loadReleases(band.id)
                         loadTracks(band.id)
+                        loadVideos(band.id)
                     }
                 }
-            } catch (e: Exception) {
-                handleNetworkError(e, "Помилка завантаження даних")
-            } finally {
-                _isLoading.value = false
-            }
+            } catch (t: Throwable) { handleException(t, "Помилка завантаження даних") }
+            finally { _isLoading.value = false }
         }
     }
 
     private fun loadTracks(bandId: String) {
+        viewModelScope.launch { try { _tracks.value = supabaseClient.postgrest["tracks"].select { filter { eq("band_id", bandId) } }.decodeList<TrackDto>() } catch (t: Throwable) {} }
+    }
+
+    private fun loadVideos(bandId: String) {
+        viewModelScope.launch { try { _videos.value = supabaseClient.postgrest["videos"].select { filter { eq("band_id", bandId) } }.decodeList<VideoDto>() } catch (t: Throwable) {} }
+    }
+
+    private fun loadReleases(bandId: String) {
         viewModelScope.launch {
             try {
-                val trackList = supabaseClient.postgrest["tracks"]
-                    .select { filter { eq("band_id", bandId) } }
-                    .decodeList<TrackDto>()
-                _tracks.value = trackList
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+                val releaseList = supabaseClient.postgrest["releases"].select { filter { eq("band_id", bandId) } }.decodeList<ReleaseDto>()
+                _releases.value = releaseList
+                if (_selectedReleaseId.value == null && releaseList.isNotEmpty()) _selectedReleaseId.value = releaseList.first().id
+            } catch (t: Throwable) {}
         }
     }
 
-    fun playTrack(trackDto: TrackDto, allTracks: List<TrackDto>) {
-        val startIndex = allTracks.indexOfFirst { it.id == trackDto.id }.coerceAtLeast(0)
-        audioController.playQueue(allTracks, startIndex)
-    }
-
-    fun deleteTrack(trackId: String) {
-        viewModelScope.launch {
+    fun createRelease(context: Context, title: String, type: String, year: Int, coverUri: Uri?, onSuccess: () -> Unit) {
+        val bandId = _currentBand.value?.id ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            _isLoading.value = true
             try {
-                supabaseClient.postgrest["tracks"].delete { filter { eq("id", trackId) } }
-                _currentBand.value?.id?.let { loadTracks(it) }
-            } catch (e: Exception) {
-                handleNetworkError(e, "Помилка видалення")
-            }
+                var coverUrl: String? = null
+                if (coverUri != null) {
+                    val bytes = context.contentResolver.openInputStream(coverUri)?.use { it.readBytes() }
+                    if (bytes != null) {
+                        val fileName = "release_${UUID.randomUUID()}.jpg"
+                        supabaseClient.storage["images"].upload(fileName, bytes)
+                        coverUrl = supabaseClient.storage["images"].publicUrl(fileName)
+                    }
+                }
+                supabaseClient.postgrest["releases"].insert(ReleaseInsertDto(bandId, title, type, year, coverUrl))
+                loadReleases(bandId)
+                onSuccess()
+            } catch (t: Throwable) { handleException(t, "Помилка створення релізу") }
+            finally { _isLoading.value = false }
         }
     }
+
+    private fun extractYouTubeId(url: String): String? {
+        val pattern = "(?<=watch\\?v=|/videos/|embed\\/|youtu.be\\/|\\/v\\/|\\/e\\/|watch\\?v%3D|watch\\?feature=player_embedded&v=|%2Fvideos%2F|embed%2F|youtu.be%2F|%2Fv%2F)[^#\\&\\?\\n]*"
+        val compiledPattern = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE)
+        val matcher = compiledPattern.matcher(url)
+        return if (matcher.find()) matcher.group() else null
+    }
+
+    fun addYouTubeVideo(title: String, url: String, onSuccess: () -> Unit) {
+        val bandId = _currentBand.value?.id ?: return
+        if (!url.contains("youtube.com") && !url.contains("youtu.be")) { _errorMessage.value = "Будь ласка, введіть коректне посилання на YouTube."; return }
+        val youtubeId = extractYouTubeId(url)
+        if (youtubeId.isNullOrBlank()) { _errorMessage.value = "Не вдалося розпізнати відео."; return }
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                supabaseClient.postgrest["videos"].insert(VideoInsertDto(bandId, title, youtubeId, "https://img.youtube.com/vi/$youtubeId/hqdefault.jpg"))
+                loadVideos(bandId)
+                onSuccess()
+            } catch (t: Throwable) { handleException(t, "Помилка додавання відео") }
+            finally { _isLoading.value = false }
+        }
+    }
+
+    fun deleteVideo(videoId: String) { viewModelScope.launch { try { supabaseClient.postgrest["videos"].delete { filter { eq("id", videoId) } }; _currentBand.value?.id?.let { loadVideos(it) } } catch (t: Throwable) {} } }
+
+    fun updateBandInfo(newName: String, newDesc: String, onSuccess: () -> Unit) {
+        val bandId = _currentBand.value?.id ?: return
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                supabaseClient.postgrest["bands"].update(BandUpdateDto(name = newName, description = newDesc.takeIf { it.isNotBlank() })) { filter { eq("id", bandId) } }
+                checkUserBand()
+                onSuccess()
+            } catch (t: Throwable) { handleException(t, "Помилка оновлення профілю") }
+            finally { _isLoading.value = false }
+        }
+    }
+
+    fun uploadBandImage(context: Context, uri: Uri, isCover: Boolean) {
+        val bandId = _currentBand.value?.id ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            _isLoading.value = true
+            try {
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@launch
+                val fileName = "band_${bandId}_${if (isCover) "cover" else "avatar"}_${UUID.randomUUID()}.jpg"
+                supabaseClient.storage["images"].upload(fileName, bytes)
+                val imageUrl = supabaseClient.storage["images"].publicUrl(fileName)
+                supabaseClient.postgrest["bands"].update(if (isCover) BandUpdateDto(cover_url = imageUrl) else BandUpdateDto(avatar_url = imageUrl)) { filter { eq("id", bandId) } }
+                checkUserBand()
+            } catch (t: Throwable) { handleException(t, "Помилка обробки зображення гурту") }
+            finally { _isLoading.value = false }
+        }
+    }
+
+    fun playTrack(trackDto: TrackDto, allTracks: List<TrackDto>) { audioController.playQueue(allTracks, allTracks.indexOfFirst { it.id == trackDto.id }.coerceAtLeast(0)) }
+
+    fun deleteTrack(trackId: String) { viewModelScope.launch { try { supabaseClient.postgrest["tracks"].delete { filter { eq("id", trackId) } }; _currentBand.value?.id?.let { loadTracks(it) } } catch (t: Throwable) {} } }
 
     fun createBand(name: String, slug: String, genres: String, onSuccess: () -> Unit) {
         viewModelScope.launch {
             _isLoading.value = true
-            _errorMessage.value = null
             try {
-                val userId = supabaseClient.auth.currentUserOrNull()?.id
-                if (userId != null) {
-                    val genresList = genres.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                    val newBand = BandInsertDto(name, slug.lowercase().replace(" ", "-"), genresList, userId)
-                    supabaseClient.postgrest["bands"].insert(newBand)
+                supabaseClient.auth.currentUserOrNull()?.id?.let { userId ->
+                    supabaseClient.postgrest["bands"].insert(BandInsertDto(name, slug.lowercase().replace(" ", "-"), genres.split(",").map { it.trim() }.filter { it.isNotEmpty() }, userId))
                     checkUserBand()
                     onSuccess()
                 }
-            } catch (e: Exception) {
-                handleNetworkError(e, "Помилка створення гурту")
-            } finally {
-                _isLoading.value = false
-            }
+            } catch (t: Throwable) { handleException(t, "Помилка створення гурту") }
+            finally { _isLoading.value = false }
         }
     }
 
+    // ВАЖЛИВО: Безпечне читання файлу у фоні. Відсутність вильотів у Каталог!
     fun analyzeAudioFile(context: Context, uri: Uri) {
         _selectedFileUri.value = uri
-        val retriever = MediaMetadataRetriever()
-        try {
-            retriever.setDataSource(context, uri)
-            _uploadTitle.value = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: ""
-            val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-            _uploadDuration.value = (durationMs / 1000).toInt()
-            _uploadArtwork.value = retriever.embeddedPicture
-        } catch (e: Exception) {
-            e.printStackTrace()
-            _errorMessage.value = "Не вдалося прочитати файл"
-        } finally {
-            retriever.release()
+        viewModelScope.launch(Dispatchers.IO) {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(context, uri)
+                val title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: ""
+                val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                val picture = retriever.embeddedPicture
+
+                _uploadTitle.value = title
+                _uploadDuration.value = (durationMs / 1000).toInt()
+                _uploadArtwork.value = picture
+            } catch (t: Throwable) {
+                _errorMessage.value = "Не вдалося відкрити файл. Спробуйте інший."
+            } finally {
+                try { retriever.release() } catch (e: Exception) {}
+            }
         }
     }
 
     fun updateUploadArtwork(context: Context, uri: Uri) {
-        viewModelScope.launch {
-            try {
-                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                _uploadArtwork.value = bytes
-            } catch (e: Exception) {
-                e.printStackTrace()
-                _errorMessage.value = "Не вдалося завантажити фото"
-            }
-        }
+        viewModelScope.launch(Dispatchers.IO) { try { _uploadArtwork.value = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } } catch (t: Throwable) {} }
     }
 
     fun updateUploadTitle(newTitle: String) { _uploadTitle.value = newTitle }
-
-    fun clearUploadForm() {
-        _selectedFileUri.value = null
-        _uploadTitle.value = ""
-        _uploadDuration.value = 0
-        _uploadArtwork.value = null
-        _errorMessage.value = null
-    }
+    fun updateSelectedRelease(releaseId: String) { _selectedReleaseId.value = releaseId }
+    fun clearUploadForm() { _selectedFileUri.value = null; _uploadTitle.value = ""; _uploadDuration.value = 0; _uploadArtwork.value = null; _errorMessage.value = null }
 
     fun uploadTrack(context: Context, onSuccess: () -> Unit) {
         val bandId = _currentBand.value?.id ?: return
         val fileUri = _selectedFileUri.value ?: return
+        val relId = _selectedReleaseId.value
 
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
-            _errorMessage.value = null
             try {
                 val trackUuid = UUID.randomUUID().toString()
-
                 val audioBytes = context.contentResolver.openInputStream(fileUri)?.use { it.readBytes() } ?: return@launch
                 val audioFileName = "audio_$trackUuid.mp3"
                 supabaseClient.storage["tracks"].upload(audioFileName, audioBytes)
@@ -216,27 +267,16 @@ class BandManagerViewModel @Inject constructor(
                 var coverUrl: String? = null
                 _uploadArtwork.value?.let { bytes ->
                     val coverFileName = "cover_$trackUuid.jpg"
-                    supabaseClient.storage["tracks"].upload(coverFileName, bytes)
-                    coverUrl = supabaseClient.storage["tracks"].publicUrl(coverFileName)
+                    supabaseClient.storage["images"].upload(coverFileName, bytes)
+                    coverUrl = supabaseClient.storage["images"].publicUrl(coverFileName)
                 }
 
-                val newTrack = TrackInsertDto(
-                    band_id = bandId,
-                    title = _uploadTitle.value,
-                    duration_sec = _uploadDuration.value,
-                    audio_url = audioUrl,
-                    cover_url = coverUrl
-                )
-                supabaseClient.postgrest["tracks"].insert(newTrack)
-
+                supabaseClient.postgrest["tracks"].insert(TrackInsertDto(band_id = bandId, release_id = relId, title = _uploadTitle.value, duration_sec = _uploadDuration.value, audio_url = audioUrl, cover_url = coverUrl))
                 clearUploadForm()
                 loadTracks(bandId)
                 onSuccess()
-            } catch (e: Exception) {
-                handleNetworkError(e, "Помилка завантаження файлу")
-            } finally {
-                _isLoading.value = false
-            }
+            } catch (t: Throwable) { handleException(t, "Не вдалося завантажити трек в хмару") }
+            finally { _isLoading.value = false }
         }
     }
 }

@@ -25,7 +25,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.tkachukmo.bandresearchapp.feature.catalog.ui.toBandCard
 import com.tkachukmo.bandresearchapp.feature.discover.viewmodel.DiscoverViewModel
 
-// Модель для відображення картки
 data class BandCard(
     val id: String,
     val name: String,
@@ -45,176 +44,135 @@ fun DiscoverScreen(
 ) {
     val bandsDto by viewModel.recommendedBands.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
 
-    // Мапимо DTO з бази в моделі для карток
     val cards = remember(bandsDto) { bandsDto.map { it.toBandCard() } }
 
-    Column(
-        modifier = modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        if (isLoading) {
-            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else if (cards.isEmpty()) {
-            // Стан, коли рекомендації закінчилися
-            Box(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(text = "🎸", fontSize = 64.sp)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Нових рекомендацій поки немає",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        } else {
-            // Беремо першу картку зі списку
-            val currentBand = cards.first()
+    // ДОДАНО: Стан для Snackbar (повідомлення про інтернет)
+    val snackbarHostState = remember { SnackbarHostState() }
 
-            var offsetX by remember { mutableFloatStateOf(0f) }
-            val rotate by animateFloatAsState(
-                targetValue = offsetX / 20f,
-                animationSpec = tween(150),
-                label = "card_rotation"
+    LaunchedEffect(errorMessage) {
+        if (errorMessage != null) {
+            snackbarHostState.showSnackbar(
+                message = errorMessage!!,
+                duration = SnackbarDuration.Long
             )
+            viewModel.clearError()
+        }
+    }
 
-            // Контейнер для свайп-картки
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .offset(x = offsetX.dp)
-                        .rotate(rotate)
-                        .pointerInput(currentBand.id) {
-                            detectHorizontalDragGestures(
-                                onDragEnd = {
-                                    if (offsetX > 150) {
-                                        viewModel.onBandSwiped(currentBand.id) // Лайк
-                                    } else if (offsetX < -150) {
-                                        viewModel.onBandSwiped(currentBand.id) // Пропуск
-                                    }
-                                    offsetX = 0f
-                                }
-                            ) { change, dragAmount ->
-                                change.consume()
-                                offsetX += dragAmount
-                            }
-                        }
-                        .clickable { onBandClick(currentBand.id) },
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = currentBand.color)
-                ) {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        // Центральний Emoji
+    // ДОДАНО: Обернули все в Scaffold для правильного відображення Snackbar
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = Color.Transparent
+    ) { innerPadding ->
+
+        Column(
+            modifier = Modifier.fillMaxSize().padding(innerPadding),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            if (isLoading) {
+                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else if (cards.isEmpty()) {
+                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(text = "🎸", fontSize = 64.sp)
+                        Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = currentBand.emoji,
-                            fontSize = 120.sp,
-                            modifier = Modifier.align(Alignment.Center)
+                            text = "Нових рекомендацій поки немає",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                }
+            } else {
+                val currentBand = cards.first()
+                var offsetX by remember { mutableFloatStateOf(0f) }
+                val rotate by animateFloatAsState(targetValue = offsetX / 20f, animationSpec = tween(150), label = "card_rotation")
 
-                        // Інфо-блок знизу картки
-                        Column(
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .fillMaxWidth()
-                                .background(Color.Black.copy(alpha = 0.4f))
-                                .padding(24.dp)
-                        ) {
-                            Text(
-                                text = currentBand.name,
-                                style = MaterialTheme.typography.headlineLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "${currentBand.genre} · ${currentBand.country}",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = Color.White.copy(alpha = 0.8f)
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
+                Box(
+                    modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .offset(x = offsetX.dp)
+                            .rotate(rotate)
+                            .pointerInput(currentBand.id) {
+                                detectHorizontalDragGestures(
+                                    onDragEnd = {
+                                        if (offsetX > 150) viewModel.onBandSwiped(currentBand.id)
+                                        else if (offsetX < -150) viewModel.onBandSwiped(currentBand.id)
+                                        offsetX = 0f
+                                    }
+                                ) { change, dragAmount ->
+                                    change.consume()
+                                    offsetX += dragAmount
+                                }
+                            }
+                            .clickable { onBandClick(currentBand.id) },
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(containerColor = currentBand.color)
+                    ) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            Text(currentBand.emoji, fontSize = 120.sp, modifier = Modifier.align(Alignment.Center))
 
-                            // Теги жанрів
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                currentBand.tags.take(3).forEach { tag ->
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(16.dp))
-                                            .background(Color.White.copy(alpha = 0.2f))
-                                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                                    ) {
-                                        Text(text = tag, color = Color.White, fontSize = 12.sp)
+                            Column(
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .fillMaxWidth()
+                                    .background(Color.Black.copy(alpha = 0.4f))
+                                    .padding(24.dp)
+                            ) {
+                                Text(currentBand.name, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = Color.White)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("${currentBand.genre} · ${currentBand.country}", style = MaterialTheme.typography.titleMedium, color = Color.White.copy(alpha = 0.8f))
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    currentBand.tags.take(3).forEach { tag ->
+                                        Box(
+                                            modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(Color.White.copy(alpha = 0.2f)).padding(horizontal = 12.dp, vertical = 6.dp)
+                                        ) {
+                                            Text(text = tag, color = Color.White, fontSize = 12.sp)
+                                        }
                                     }
                                 }
                             }
-                        }
 
-                        // Візуальні підказки свайпу
-                        if (offsetX > 60) {
-                            Text(
-                                "ТАК", color = Color.Green, fontSize = 40.sp, fontWeight = FontWeight.Black,
-                                modifier = Modifier.align(Alignment.TopStart).padding(32.dp).rotate(-15f)
-                            )
-                        } else if (offsetX < -60) {
-                            Text(
-                                "НІ", color = Color.Red, fontSize = 40.sp, fontWeight = FontWeight.Black,
-                                modifier = Modifier.align(Alignment.TopEnd).padding(32.dp).rotate(15f)
-                            )
+                            if (offsetX > 60) {
+                                Text("ТАК", color = Color.Green, fontSize = 40.sp, fontWeight = FontWeight.Black, modifier = Modifier.align(Alignment.TopStart).padding(32.dp).rotate(-15f))
+                            } else if (offsetX < -60) {
+                                Text("НІ", color = Color.Red, fontSize = 40.sp, fontWeight = FontWeight.Black, modifier = Modifier.align(Alignment.TopEnd).padding(32.dp).rotate(15f))
+                            }
                         }
                     }
                 }
-            }
 
-            // Нижні кнопки керування
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 32.dp, vertical = 24.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Кнопка "Ні"
-                FilledIconButton(
-                    onClick = { viewModel.onBandSwiped(currentBand.id) },
-                    modifier = Modifier.size(64.dp),
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 24.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        Icons.Default.Close,
-                        contentDescription = "Пропустити",
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
+                    FilledIconButton(
+                        onClick = { viewModel.onBandSwiped(currentBand.id) },
+                        modifier = Modifier.size(64.dp),
+                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        Icon(Icons.Default.Close, "Пропустити", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(28.dp))
+                    }
 
-                // Кнопка "Так"
-                FilledIconButton(
-                    onClick = { viewModel.onBandSwiped(currentBand.id) },
-                    modifier = Modifier.size(64.dp),
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Icon(
-                        Icons.Default.Favorite,
-                        contentDescription = "Подобається",
-                        tint = Color.White,
-                        modifier = Modifier.size(32.dp)
-                    )
+                    FilledIconButton(
+                        onClick = { viewModel.onBandSwiped(currentBand.id) },
+                        modifier = Modifier.size(64.dp),
+                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Icon(Icons.Default.Favorite, "Подобається", tint = Color.White, modifier = Modifier.size(32.dp))
+                    }
                 }
             }
         }

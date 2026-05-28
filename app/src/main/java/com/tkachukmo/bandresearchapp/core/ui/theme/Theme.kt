@@ -1,5 +1,6 @@
 package com.tkachukmo.bandresearchapp.core.ui.theme
 
+import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -8,22 +9,11 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
-
-private val LightColorScheme = lightColorScheme(
-    primary = BandPrimary,
-    onPrimary = BandOnPrimary,
-    primaryContainer = BandPrimaryContainer,
-    onPrimaryContainer = BandOnPrimaryContainer,
-    secondary = BandSecondary,
-    secondaryContainer = BandSecondaryContainer,
-    onSecondaryContainer = BandOnSecondaryContainer,
-    tertiary = BandTertiary,
-    tertiaryContainer = BandTertiaryContainer,
-    surface = BandSurface,
-    background = BandBackground,
-    error = BandError
-)
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 
 private val DarkColorScheme = darkColorScheme(
     primary = BandPrimaryDark,
@@ -33,13 +23,20 @@ private val DarkColorScheme = darkColorScheme(
     secondary = BandSecondaryDark,
     secondaryContainer = BandSecondaryContainerDark,
     surface = BandSurfaceDark,
-    background = BandBackgroundDark
+    background = BandBackgroundDark,
+    onBackground = TextWhite,
+    onSurface = TextWhite,
+    onSurfaceVariant = TextGray,
+    error = BandError
 )
+
+// Робимо світлу тему ідентичною темній, щоб дизайн не ламався на телефонах зі світлою темою
+private val LightColorScheme = DarkColorScheme
 
 @Composable
 fun BandResearchAppTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color — працює на Android 12+
+    // Вимикаємо динамічні кольори за замовчуванням, щоб зберегти фіолетовий дизайн!
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
@@ -49,8 +46,17 @@ fun BandResearchAppTheme(
             if (darkTheme) dynamicDarkColorScheme(context)
             else dynamicLightColorScheme(context)
         }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
+        else -> DarkColorScheme // Завжди використовуємо наш темний дизайн
+    }
+
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as Activity).window
+            // Фарбуємо верхню системну шторку (де годинник і батарея) в колір фону
+            window.statusBarColor = DarkBackground.toArgb()
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
+        }
     }
 
     MaterialTheme(

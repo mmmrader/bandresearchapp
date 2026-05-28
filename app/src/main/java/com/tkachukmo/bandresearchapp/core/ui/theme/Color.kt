@@ -2,36 +2,36 @@ package com.tkachukmo.bandresearchapp.core.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Light scheme
-val Purple40 = Color(0xFF6750A4)
-val PurpleGrey40 = Color(0xFF625B71)
-val Pink40 = Color(0xFF7D5260)
+// Custom BandMatch palette (Новий дизайн)
+val NeonPurple = Color(0xFFB288FF)
+val DeepPurple = Color(0xFF4A148C)
+val DarkBackground = Color(0xFF121212)
+val SurfaceDark = Color(0xFF1E1E1E)
+val SurfaceVariantDark = Color(0xFF2A2A2A)
+val TextWhite = Color(0xFFFFFFFF)
+val TextGray = Color(0xFFA0A0A0)
+val ErrorRed = Color(0xFFFF5252)
 
-// Dark scheme
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+// Підв'язка під Material 3 (Примусово темні кольори для всього додатку)
+val BandPrimaryDark = NeonPurple
+val BandOnPrimaryDark = DarkBackground
+val BandPrimaryContainerDark = DeepPurple
+val BandOnPrimaryContainerDark = TextWhite
+val BandSecondaryDark = Color(0xFFBB86FC)
+val BandSecondaryContainerDark = SurfaceVariantDark
+val BandSurfaceDark = SurfaceDark
+val BandBackgroundDark = DarkBackground
+val BandError = ErrorRed
 
-// Custom BandMatch palette (з прототипу)
-val BandPrimary = Color(0xFF6750A4)
-val BandOnPrimary = Color(0xFFFFFFFF)
-val BandPrimaryContainer = Color(0xFFEADDFF)
-val BandOnPrimaryContainer = Color(0xFF21005D)
-val BandSecondary = Color(0xFF625B71)
-val BandSecondaryContainer = Color(0xFFE8DEF8)
-val BandOnSecondaryContainer = Color(0xFF1D192B)
-val BandTertiary = Color(0xFF7D5260)
-val BandTertiaryContainer = Color(0xFFFFD8E4)
-val BandSurface = Color(0xFFFFFBFE)
-val BandBackground = Color(0xFFFFFBFE)
-val BandError = Color(0xFFB3261E)
-
-// Dark variants
-val BandPrimaryDark = Color(0xFFD0BCFF)
-val BandOnPrimaryDark = Color(0xFF381E72)
-val BandPrimaryContainerDark = Color(0xFF4F378B)
-val BandOnPrimaryContainerDark = Color(0xFFEADDFF)
-val BandSecondaryDark = Color(0xFFCCC2DC)
-val BandSecondaryContainerDark = Color(0xFF4A4458)
-val BandSurfaceDark = Color(0xFF141218)
-val BandBackgroundDark = Color(0xFF141218)
+// (Залишаємо для сумісності зі старим кодом, але вони дублюють темну тему)
+val BandPrimary = BandPrimaryDark
+val BandOnPrimary = BandOnPrimaryDark
+val BandPrimaryContainer = BandPrimaryContainerDark
+val BandOnPrimaryContainer = BandOnPrimaryContainerDark
+val BandSecondary = BandSecondaryDark
+val BandSecondaryContainer = BandSecondaryContainerDark
+val BandOnSecondaryContainer = TextWhite
+val BandTertiary = Color(0xFF03DAC6)
+val BandTertiaryContainer = Color(0xFF00544F)
+val BandSurface = BandSurfaceDark
+val BandBackground = BandBackgroundDark

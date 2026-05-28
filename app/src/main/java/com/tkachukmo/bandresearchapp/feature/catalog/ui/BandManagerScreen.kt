@@ -1,9 +1,7 @@
 package com.tkachukmo.bandresearchapp.feature.catalog.ui
 
-import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -13,234 +11,107 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Event
+import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
-import com.canhub.cropper.CropImageContract
-import com.canhub.cropper.CropImageContractOptions
-import com.canhub.cropper.CropImageOptions
-
 import com.tkachukmo.bandresearchapp.data.remote.dto.BandDto
+import com.tkachukmo.bandresearchapp.data.remote.dto.ReleaseDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.TrackDto
+import com.tkachukmo.bandresearchapp.data.remote.dto.VideoDto
 import com.tkachukmo.bandresearchapp.feature.catalog.viewmodel.BandManagerViewModel
+import com.tkachukmo.bandresearchapp.feature.discover.ui.MiniPlayer
+import java.util.Calendar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BandManagerScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToTab: (Int) -> Unit = {},
     viewModel: BandManagerViewModel = hiltViewModel()
 ) {
     val isLoading by viewModel.isLoading.collectAsState()
     val currentBand by viewModel.currentBand.collectAsState()
     val tracks by viewModel.tracks.collectAsState()
+    val videos by viewModel.videos.collectAsState()
+    val releases by viewModel.releases.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
 
-    var isCreatingBand by remember { mutableStateOf(false) }
-    var isUploadingTrack by remember { mutableStateOf(false) }
-
-    var bandName by remember { mutableStateOf("") }
-    var bandSlug by remember { mutableStateOf("") }
-    var bandGenres by remember { mutableStateOf("") }
+    var isCreatingBand by rememberSaveable { mutableStateOf(false) }
+    var isUploadingTrack by rememberSaveable { mutableStateOf(false) }
+    var isAddingVideo by rememberSaveable { mutableStateOf(false) }
+    var isCreatingRelease by rememberSaveable { mutableStateOf(false) }
+    var isEditingProfile by rememberSaveable { mutableStateOf(false) }
 
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(errorMessage) {
+        val msg = viewModel.errorMessage.value
+        if (msg != null) {
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearError()
+        }
+    }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Кабінет гурту", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        if (isUploadingTrack) {
-                            viewModel.clearUploadForm()
-                            isUploadingTrack = false
-                        } else if (isCreatingBand) {
-                            isCreatingBand = false
-                        } else {
-                            onNavigateBack()
-                        }
-                    }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
-                    }
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        bottomBar = {
+            Column {
+                MiniPlayer(onNavigateToPlayer = { /* TODO */ })
+                NavigationBar {
+                    NavigationBarItem(selected = false, onClick = { onNavigateToTab(0) }, icon = { Icon(Icons.Outlined.LibraryMusic, "Каталог") }, label = { Text("Каталог") })
+                    NavigationBarItem(selected = false, onClick = { onNavigateToTab(1) }, icon = { Icon(Icons.Outlined.Search, "Пошук") }, label = { Text("Пошук") })
+                    NavigationBarItem(selected = false, onClick = { onNavigateToTab(2) }, icon = { Icon(Icons.Outlined.Event, "Події") }, label = { Text("Події") })
+                    NavigationBarItem(selected = true, onClick = { }, icon = { Icon(Icons.Filled.Person, "Профіль") }, label = { Text("Профіль") })
                 }
-            )
-        },
-        floatingActionButton = {
-            if (currentBand != null && !isCreatingBand && !isUploadingTrack) {
-                ExtendedFloatingActionButton(
-                    onClick = { isUploadingTrack = true },
-                    icon = { Icon(Icons.Default.Add, "Додати") },
-                    text = { Text("Новий реліз") }
-                )
             }
         }
     ) { paddingValues ->
-        Box(
-            modifier = Modifier.fillMaxSize().padding(paddingValues),
-            contentAlignment = Alignment.Center
-        ) {
+        Box(modifier = Modifier.fillMaxSize().padding(bottom = paddingValues.calculateBottomPadding())) {
+
             when {
-                isLoading -> CircularProgressIndicator()
+                isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                isCreatingRelease -> AddReleaseForm(viewModel, { isCreatingRelease = false }, { isCreatingRelease = false })
+                isUploadingTrack -> UploadTrackForm(viewModel, releases, { viewModel.clearUploadForm(); isUploadingTrack = false }, { viewModel.uploadTrack(context) { isUploadingTrack = false } })
+                isAddingVideo -> AddVideoForm(viewModel, { isAddingVideo = false }, { isAddingVideo = false })
+                isEditingProfile && currentBand != null -> EditBandProfile(currentBand!!, viewModel) { isEditingProfile = false }
+                currentBand != null -> BandDashboard(currentBand!!, tracks, videos, releases, viewModel, { isEditingProfile = true }, { isUploadingTrack = true }, { isAddingVideo = true }, { isCreatingRelease = true })
+                isCreatingBand -> CreateBandForm(viewModel) { isCreatingBand = false }
+                else -> EmptyBandState { isCreatingBand = true }
+            }
 
-                isUploadingTrack -> {
-                    UploadTrackForm(
-                        viewModel = viewModel,
-                        onCancel = {
-                            viewModel.clearUploadForm()
-                            isUploadingTrack = false
-                        },
-                        onSave = {
-                            viewModel.uploadTrack(context) {
-                                isUploadingTrack = false
-                            }
-                        }
-                    )
-                }
-
-                currentBand != null -> {
-                    BandDashboard(
-                        band = currentBand!!,
-                        tracks = tracks,
-                        viewModel = viewModel
-                    )
-                }
-
-                isCreatingBand -> {
-                    Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Створення профілю гурту", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.height(24.dp))
-                        OutlinedTextField(value = bandName, onValueChange = { bandName = it }, label = { Text("Назва гурту") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        OutlinedTextField(value = bandSlug, onValueChange = { bandSlug = it }, label = { Text("Унікальне посилання (slug)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        OutlinedTextField(value = bandGenres, onValueChange = { bandGenres = it }, label = { Text("Жанри (через кому)") }, modifier = Modifier.fillMaxWidth())
-
-                        if (errorMessage != null) {
-                            Text(text = errorMessage!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
-                        }
-                        Spacer(modifier = Modifier.weight(1f))
-                        Button(
-                            onClick = { viewModel.createBand(bandName, bandSlug, bandGenres, onSuccess = { isCreatingBand = false }) },
-                            modifier = Modifier.fillMaxWidth().height(56.dp),
-                            enabled = bandName.isNotBlank() && bandSlug.isNotBlank() && bandGenres.isNotBlank()
-                        ) { Text("Зберегти та продовжити") }
+            IconButton(
+                onClick = {
+                    when {
+                        isUploadingTrack -> { viewModel.clearUploadForm(); isUploadingTrack = false }
+                        isCreatingRelease -> isCreatingRelease = false
+                        isAddingVideo -> isAddingVideo = false
+                        isEditingProfile -> isEditingProfile = false
+                        isCreatingBand -> isCreatingBand = false
+                        else -> onNavigateBack()
                     }
-                }
-
-                else -> {
-                    EmptyBandState(onCreateClick = { isCreatingBand = true })
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun UploadTrackForm(
-    viewModel: BandManagerViewModel,
-    onCancel: () -> Unit,
-    onSave: () -> Unit
-) {
-    val context = LocalContext.current
-    val selectedUri by viewModel.selectedFileUri.collectAsState()
-    val uploadTitle by viewModel.uploadTitle.collectAsState()
-    val uploadDuration by viewModel.uploadDuration.collectAsState()
-    val uploadArtwork by viewModel.uploadArtwork.collectAsState()
-    val errorMessage by viewModel.errorMessage.collectAsState()
-
-    val audioPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) viewModel.analyzeAudioFile(context, uri)
-    }
-
-    val imageCropLauncher = rememberLauncherForActivityResult(CropImageContract()) { result ->
-        if (result.isSuccessful) {
-            result.uriContent?.let { uri ->
-                viewModel.updateUploadArtwork(context, uri)
-            }
-        }
-    }
-
-    val imagePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
-            val cropOptions = CropImageContractOptions(uri, CropImageOptions(
-                fixAspectRatio = true,
-                aspectRatioX = 1,
-                aspectRatioY = 1,
-                activityBackgroundColor = android.graphics.Color.BLACK,
-                toolbarColor = android.graphics.Color.parseColor("#121218"),
-                toolbarTitleColor = android.graphics.Color.WHITE,
-                activityMenuIconColor = android.graphics.Color.WHITE
-            ))
-            imageCropLauncher.launch(cropOptions)
-        }
-    }
-
-    val artworkBitmap = remember(uploadArtwork) {
-        uploadArtwork?.let { bytes -> BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap() }
-    }
-
-    Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("Новий трек", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(24.dp))
-
-        if (selectedUri == null) {
-            Card(
-                modifier = Modifier.fillMaxWidth().height(200.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-                onClick = { audioPickerLauncher.launch("audio/*") }
+                },
+                modifier = Modifier.align(Alignment.TopStart).padding(start = 8.dp).statusBarsPadding().background(Color.Black.copy(alpha = 0.3f), CircleShape)
             ) {
-                Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                    Icon(Icons.Default.MusicNote, null, modifier = Modifier.size(64.dp))
-                    Text("Оберіть .mp3 файл", fontWeight = FontWeight.Medium)
-                }
-            }
-        } else {
-            Box(
-                modifier = Modifier.size(160.dp).clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .clickable { imagePickerLauncher.launch("image/*") },
-                contentAlignment = Alignment.Center
-            ) {
-                if (artworkBitmap != null) {
-                    Image(bitmap = artworkBitmap, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                    Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)), contentAlignment = Alignment.Center) {
-                        Text("Змінити фото", color = Color.White, style = MaterialTheme.typography.labelSmall)
-                    }
-                } else {
-                    Icon(Icons.Default.AddPhotoAlternate, null, modifier = Modifier.size(48.dp), tint = Color.Gray)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-            OutlinedTextField(value = uploadTitle, onValueChange = { viewModel.updateUploadTitle(it) }, label = { Text("Назва треку") }, modifier = Modifier.fillMaxWidth())
-            Text(text = "Тривалість: ${uploadDuration / 60}:${(uploadDuration % 60).toString().padStart(2, '0')}", modifier = Modifier.align(Alignment.Start).padding(top = 8.dp))
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            if (errorMessage != null) {
-                Text(
-                    text = errorMessage!!,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-            }
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f).height(50.dp)) { Text("Скасувати") }
-                Button(onClick = onSave, modifier = Modifier.weight(1f).height(50.dp), enabled = uploadTitle.isNotBlank()) { Text("Опублікувати") }
+                Icon(Icons.Default.ArrowBack, contentDescription = "Назад", tint = Color.White)
             }
         }
     }
@@ -250,128 +121,310 @@ fun UploadTrackForm(
 fun BandDashboard(
     band: BandDto,
     tracks: List<TrackDto>,
-    viewModel: BandManagerViewModel
+    videos: List<VideoDto>,
+    releases: List<ReleaseDto>,
+    viewModel: BandManagerViewModel,
+    onEditClick: () -> Unit,
+    onAddTrackClick: () -> Unit,
+    onAddVideoClick: () -> Unit,
+    onAddReleaseClick: () -> Unit
 ) {
+    val context = LocalContext.current
     val scrollState = rememberScrollState()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(scrollState)
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Box(modifier = Modifier.size(100.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
-            Text(text = band.name.take(2).uppercase(), fontSize = 36.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(text = band.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        band.genres?.let { Text(text = it.joinToString(", "), color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        Spacer(modifier = Modifier.height(32.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            // ТУТ ВИПРАВЛЕНО: followersCount та playsCount
-            DashboardStatCard(Modifier.weight(1f), Icons.Default.People, band.followersCount.toString(), "Підписників", MaterialTheme.colorScheme.secondaryContainer)
-            DashboardStatCard(Modifier.weight(1f), Icons.Default.PlayArrow, band.playsCount.toString(), "Прослуховувань", MaterialTheme.colorScheme.tertiaryContainer)
-        }
-        Spacer(modifier = Modifier.height(32.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Ваші релізи", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            IconButton(onClick = { }) { Icon(Icons.Default.Edit, contentDescription = "Редагувати") }
-        }
+    val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let { viewModel.uploadBandImage(context, it, false) } }
+    val coverPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let { viewModel.uploadBandImage(context, it, true) } }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (tracks.isEmpty()) {
-            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.BarChart, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("У вас ще немає завантажених релізів", textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
+        Box(modifier = Modifier.fillMaxWidth().height(300.dp)) {
+            Box(modifier = Modifier.fillMaxSize().clickable { coverPicker.launch("image/*") }) {
+                if (band.coverUrl != null) AsyncImage(model = band.coverUrl, contentDescription = "Cover", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                else Box(modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF6750A4), Color(0xFF21005D)))))
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.CameraAlt, null, tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(32.dp))
                 }
             }
-        } else {
-            tracks.forEach { track ->
-                TrackItem(
-                    track = track,
-                    onPlay = { viewModel.playTrack(track, tracks) },
-                    onDelete = { viewModel.deleteTrack(track.id) }
-                )
+            Box(
+                modifier = Modifier.align(Alignment.BottomCenter).offset(y = (50).dp).size(100.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface).clickable { avatarPicker.launch("image/*") },
+                contentAlignment = Alignment.Center
+            ) {
+                if (band.avatarUrl != null) AsyncImage(model = band.avatarUrl, contentDescription = "Avatar", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                else Text(band.name.take(2).uppercase(), fontSize = 32.sp, fontWeight = FontWeight.Bold)
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.PhotoCamera, null, tint = Color.White, modifier = Modifier.size(28.dp))
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(60.dp))
+
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = band.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                IconButton(onClick = onEditClick) { Icon(Icons.Default.Edit, null, tint = MaterialTheme.colorScheme.primary) }
+            }
+            band.genres.takeIf { it.isNotEmpty() }?.let { Text(text = it.joinToString(", "), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            if (!band.description.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(text = band.description, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 16.dp))
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                DashboardStatCard(Modifier.weight(1f), Icons.Default.People, band.followersCount.toString(), "Підписників", MaterialTheme.colorScheme.secondaryContainer)
+                DashboardStatCard(Modifier.weight(1f), Icons.Default.PlayArrow, band.playsCount.toString(), "Прослуховувань", MaterialTheme.colorScheme.tertiaryContainer)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Альбоми / EP / Сингли", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            IconButton(onClick = onAddReleaseClick) { Icon(Icons.Default.LibraryAdd, contentDescription = "Створити альбом", tint = MaterialTheme.colorScheme.primary) }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        if (releases.isEmpty()) Text("Створіть свій перший реліз перед завантаженням треків", modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        else {
+            releases.forEach { release ->
+                ReleaseItem(release)
                 Spacer(modifier = Modifier.height(8.dp))
             }
-            Spacer(modifier = Modifier.height(80.dp))
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Окремі треки", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            IconButton(onClick = onAddTrackClick) { Icon(Icons.Default.AddCircle, contentDescription = "Додати трек", tint = MaterialTheme.colorScheme.primary) }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        if (tracks.isEmpty()) Text("Немає треків", modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        else tracks.forEach { track ->
+            TrackItem(track, { viewModel.playTrack(track, tracks) }, { viewModel.deleteTrack(track.id) })
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Ваші відео", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            IconButton(onClick = onAddVideoClick) { Icon(Icons.Default.VideoCall, contentDescription = "Додати відео", tint = MaterialTheme.colorScheme.primary) }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        if (videos.isEmpty()) Text("Немає доданих відео", modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        else videos.forEach { video ->
+            VideoItem(video) { viewModel.deleteVideo(video.id) }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        Spacer(modifier = Modifier.height(100.dp))
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AddReleaseForm(viewModel: BandManagerViewModel, onCancel: () -> Unit, onSave: () -> Unit) {
+    val context = LocalContext.current
+    var title by remember { mutableStateOf("") }
+    var year by remember { mutableStateOf(Calendar.getInstance().get(Calendar.YEAR).toString()) }
+    var selectedType by remember { mutableStateOf("single") }
+    var expanded by remember { mutableStateOf(false) }
+    var coverUri by remember { mutableStateOf<android.net.Uri?>(null) }
+
+    val types = mapOf("single" to "Сингл", "ep" to "EP", "album" to "Альбом")
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> coverUri = uri }
+
+    Column(modifier = Modifier.fillMaxSize().padding(top = 80.dp, start = 24.dp, end = 24.dp, bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("Створити Реліз", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Box(modifier = Modifier.size(160.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable { imagePicker.launch("image/*") }, contentAlignment = Alignment.Center) {
+            if (coverUri != null) AsyncImage(model = coverUri, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            else Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Default.AddPhotoAlternate, null, modifier = Modifier.size(48.dp))
+                Text("Обкладинка", style = MaterialTheme.typography.labelMedium)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+        OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Назва") }, modifier = Modifier.fillMaxWidth())
+        Spacer(modifier = Modifier.height(16.dp))
+        OutlinedTextField(value = year, onValueChange = { year = it }, label = { Text("Рік випуску") }, modifier = Modifier.fillMaxWidth())
+        Spacer(modifier = Modifier.height(16.dp))
+
+        ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
+            OutlinedTextField(
+                value = types[selectedType] ?: "",
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Тип релізу") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                modifier = Modifier.menuAnchor().fillMaxWidth()
+            )
+            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                types.forEach { (key, label) ->
+                    DropdownMenuItem(text = { Text(label) }, onClick = { selectedType = key; expanded = false })
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f).height(50.dp)) { Text("Скасувати") }
+            Button(
+                onClick = { viewModel.createRelease(context, title, selectedType, year.toIntOrNull() ?: Calendar.getInstance().get(Calendar.YEAR), coverUri, onSave) },
+                modifier = Modifier.weight(1f).height(50.dp),
+                enabled = title.isNotBlank()
+            ) { Text("Створити") }
         }
     }
 }
 
 @Composable
-fun TrackItem(
-    track: TrackDto,
-    onPlay: () -> Unit,
-    onDelete: () -> Unit
-) {
-    var showDeleteDialog by remember { mutableStateOf(false) }
-
-    if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Видалення треку") },
-            text = { Text("Ви впевнені, що хочете видалити «${track.title}»? Цю дію неможливо скасувати.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDeleteDialog = false
-                    onDelete()
-                }) { Text("Видалити", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) { Text("Скасувати") }
+fun ReleaseItem(release: ReleaseDto) {
+    Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        Row(modifier = Modifier.padding(8.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+                if (release.coverUrl != null) AsyncImage(model = release.coverUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                else Icon(Icons.Default.Album, null)
             }
-        )
+            Column(modifier = Modifier.padding(start = 16.dp).weight(1f)) {
+                Text(text = release.title, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(text = "${release.releaseType.uppercase()} • ${release.releaseYear ?: ""}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            }
+        }
     }
+}
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onPlay() },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(8.dp).fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center
-            ) {
-                // ТУТ ВИПРАВЛЕНО: coverUrl
-                if (track.coverUrl != null) {
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun UploadTrackForm(viewModel: BandManagerViewModel, releases: List<ReleaseDto>, onCancel: () -> Unit, onSave: () -> Unit) {
+    val context = LocalContext.current
+    val selectedUri by viewModel.selectedFileUri.collectAsState()
+    val uploadTitle by viewModel.uploadTitle.collectAsState()
+    val uploadArtwork by viewModel.uploadArtwork.collectAsState()
+    val selectedReleaseId by viewModel.selectedReleaseId.collectAsState()
+
+    var expanded by remember { mutableStateOf(false) }
+
+    val audioPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let { viewModel.analyzeAudioFile(context, it) } }
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let { viewModel.updateUploadArtwork(context, it) } }
+
+    Column(modifier = Modifier.fillMaxSize().padding(top = 80.dp, start = 24.dp, end = 24.dp, bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("Новий трек", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(24.dp))
+
+        if (selectedUri == null) {
+            Card(modifier = Modifier.fillMaxWidth().height(200.dp), onClick = { audioPicker.launch("audio/*") }) {
+                Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    Icon(Icons.Default.MusicNote, null, modifier = Modifier.size(64.dp))
+                    Text("Оберіть .mp3 файл")
+                }
+            }
+        } else {
+            Box(modifier = Modifier.size(160.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable { imagePicker.launch("image/*") }, contentAlignment = Alignment.Center) {
+                // ВАЖЛИВО: Використовуємо AsyncImage замість BitmapFactory, щоб не крашити додаток
+                if (uploadArtwork != null) {
                     AsyncImage(
-                        model = track.coverUrl,
-                        contentDescription = "Cover",
+                        model = uploadArtwork,
+                        contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
-                    Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.Gray)
+                    Icon(Icons.Default.AddPhotoAlternate, null, modifier = Modifier.size(48.dp))
                 }
             }
+            Spacer(modifier = Modifier.height(24.dp))
+            OutlinedTextField(value = uploadTitle, onValueChange = { viewModel.updateUploadTitle(it) }, label = { Text("Назва треку") }, modifier = Modifier.fillMaxWidth())
+            Spacer(modifier = Modifier.height(16.dp))
 
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = track.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1)
-                // ТУТ ВИПРАВЛЕНО: playsCount та durationSec
-                Text(
-                    text = "${track.playsCount} прослуховувань • ${track.durationSec / 60}:${(track.durationSec % 60).toString().padStart(2, '0')}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            if (releases.isNotEmpty()) {
+                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
+                    val currentSelectionName = releases.find { it.id == selectedReleaseId }?.title ?: "Оберіть альбом"
+                    OutlinedTextField(
+                        value = currentSelectionName,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Додати в реліз") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        releases.forEach { release ->
+                            DropdownMenuItem(text = { Text(release.title) }, onClick = { viewModel.updateSelectedRelease(release.id); expanded = false })
+                        }
+                    }
+                }
+            } else {
+                Text("Увага: ви не створили жодного релізу. Трек буде додано без альбому.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
 
-            IconButton(onClick = { showDeleteDialog = true }) {
-                Icon(Icons.Default.Delete, contentDescription = "Видалити", tint = MaterialTheme.colorScheme.error)
+            Spacer(modifier = Modifier.weight(1f))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f).height(50.dp)) { Text("Скасувати") }
+                Button(onClick = onSave, modifier = Modifier.weight(1f).height(50.dp), enabled = uploadTitle.isNotBlank()) { Text("Завантажити") }
             }
         }
+    }
+}
+
+@Composable
+fun AddVideoForm(viewModel: BandManagerViewModel, onCancel: () -> Unit, onSave: () -> Unit) {
+    var title by remember { mutableStateOf("") }
+    var url by remember { mutableStateOf("") }
+    Column(modifier = Modifier.fillMaxSize().padding(top = 80.dp, start = 24.dp, end = 24.dp, bottom = 24.dp)) {
+        Text("Додати YouTube Відео", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(24.dp))
+        OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Назва відео") }, modifier = Modifier.fillMaxWidth())
+        Spacer(modifier = Modifier.height(16.dp))
+        OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("Посилання на YouTube") }, modifier = Modifier.fillMaxWidth())
+        Spacer(modifier = Modifier.weight(1f))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f).height(50.dp)) { Text("Скасувати") }
+            Button(onClick = { viewModel.addYouTubeVideo(title, url, onSave) }, modifier = Modifier.weight(1f).height(50.dp), enabled = title.isNotBlank() && url.isNotBlank()) { Text("Додати") }
+        }
+    }
+}
+
+@Composable
+fun VideoItem(video: VideoDto, onDelete: () -> Unit) {
+    var showDialog by remember { mutableStateOf(false) }
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text("Видалення") },
+            text = { Text("Видалити відео ${video.title}?") },
+            confirmButton = { TextButton(onClick = { showDialog = false; onDelete() }) { Text("Видалити", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { showDialog = false }) { Text("Скасувати") } }
+        )
+    }
+    Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        Row(modifier = Modifier.padding(8.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.width(100.dp).height(56.dp).clip(RoundedCornerShape(8.dp)).background(Color.Black), contentAlignment = Alignment.Center) {
+                if (video.thumbnailUrl != null) AsyncImage(model = video.thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                else Icon(Icons.Default.PlayCircle, null, tint = Color.White)
+            }
+            Column(modifier = Modifier.padding(start = 16.dp).weight(1f)) {
+                Text(text = video.title, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            IconButton(onClick = { showDialog = true }) { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) }
+        }
+    }
+}
+
+@Composable
+fun EditBandProfile(band: BandDto, viewModel: BandManagerViewModel, onDone: () -> Unit) {
+    var name by remember { mutableStateOf(band.name) }
+    var description by remember { mutableStateOf(band.description ?: "") }
+    Column(modifier = Modifier.fillMaxSize().padding(top = 80.dp, start = 24.dp, end = 24.dp, bottom = 24.dp)) {
+        Text("Редагування профілю", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(24.dp))
+        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Назва гурту") }, modifier = Modifier.fillMaxWidth())
+        Spacer(modifier = Modifier.height(16.dp))
+        OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Опис гурту") }, modifier = Modifier.fillMaxWidth().height(120.dp), maxLines = 5)
+        Spacer(modifier = Modifier.weight(1f))
+        Button(onClick = { viewModel.updateBandInfo(name, description) { onDone() } }, modifier = Modifier.fillMaxWidth().height(56.dp), enabled = name.isNotBlank()) { Text("Зберегти зміни") }
     }
 }
 
@@ -387,11 +440,56 @@ fun DashboardStatCard(modifier: Modifier = Modifier, icon: androidx.compose.ui.g
 }
 
 @Composable
+fun CreateBandForm(viewModel: BandManagerViewModel, onDone: () -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var slug by remember { mutableStateOf("") }
+    var genres by remember { mutableStateOf("") }
+    Column(modifier = Modifier.fillMaxSize().padding(top = 80.dp, start = 24.dp, end = 24.dp, bottom = 24.dp)) {
+        Text("Створення гурту", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(24.dp))
+        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Назва гурту") }, modifier = Modifier.fillMaxWidth())
+        Spacer(modifier = Modifier.height(16.dp))
+        OutlinedTextField(value = slug, onValueChange = { slug = it }, label = { Text("Унікальне посилання (slug)") }, modifier = Modifier.fillMaxWidth())
+        Spacer(modifier = Modifier.height(16.dp))
+        OutlinedTextField(value = genres, onValueChange = { genres = it }, label = { Text("Жанри (через кому)") }, modifier = Modifier.fillMaxWidth())
+        Spacer(modifier = Modifier.weight(1f))
+        Button(onClick = { viewModel.createBand(name, slug, genres) { onDone() } }, modifier = Modifier.fillMaxWidth().height(56.dp), enabled = name.isNotBlank()) { Text("Створити") }
+    }
+}
+
+@Composable
 fun EmptyBandState(onCreateClick: () -> Unit) {
     Column(modifier = Modifier.padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Icon(Icons.Default.MusicNote, null, modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.primary)
         Text("У тебе ще немає гурту", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Text("Створи профіль для свого гурту, щоб завантажувати треки.", textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 16.dp))
+        Spacer(modifier = Modifier.height(16.dp))
         Button(onClick = onCreateClick, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text("Створити гурт") }
+    }
+}
+
+@Composable
+fun TrackItem(track: TrackDto, onPlay: () -> Unit, onDelete: () -> Unit) {
+    var showDialog by remember { mutableStateOf(false) }
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text("Видалення") },
+            text = { Text("Видалити трек ${track.title}?") },
+            confirmButton = { TextButton(onClick = { showDialog = false; onDelete() }) { Text("Видалити", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { showDialog = false }) { Text("Скасувати") } }
+        )
+    }
+    Card(modifier = Modifier.fillMaxWidth().clickable { onPlay() }.padding(horizontal = 16.dp)) {
+        Row(modifier = Modifier.padding(8.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+                if (track.coverUrl != null) AsyncImage(model = track.coverUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                else Icon(Icons.Default.MusicNote, null)
+            }
+            Column(modifier = Modifier.padding(start = 16.dp).weight(1f)) {
+                Text(text = track.title, fontWeight = FontWeight.Bold)
+                Text(text = "${track.playsCount} прослуховувань", style = MaterialTheme.typography.bodySmall)
+            }
+            IconButton(onClick = { showDialog = true }) { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) }
+        }
     }
 }

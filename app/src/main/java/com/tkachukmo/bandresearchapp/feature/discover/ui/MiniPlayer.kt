@@ -27,74 +27,142 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
+import com.tkachukmo.bandresearchapp.data.remote.dto.TrackDto
 import com.tkachukmo.bandresearchapp.feature.discover.viewmodel.MiniPlayerViewModel
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
 @Composable
 fun MiniPlayer(
     onNavigateToPlayer: (String) -> Unit,
     viewModel: MiniPlayerViewModel = hiltViewModel()
 ) {
+
     val currentTrack by viewModel.audioController.currentTrack.collectAsState()
     val isPlaying by viewModel.audioController.isPlaying.collectAsState()
     val extractedTitle by viewModel.audioController.extractedTitle.collectAsState()
 
     var isDismissed by remember { mutableStateOf(false) }
 
+    // Запам'ятовуємо останній трек,
+    // щоб уникнути крашу під час анімації зникнення
+    var rememberedTrack by remember {
+        mutableStateOf<TrackDto?>(null)
+    }
+
     LaunchedEffect(currentTrack) {
-        if (currentTrack != null) isDismissed = false
+        if (currentTrack != null) {
+            rememberedTrack = currentTrack
+            isDismissed = false
+        }
     }
 
     AnimatedVisibility(
         visible = currentTrack != null && !isDismissed,
-        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+        enter = slideInVertically(
+            initialOffsetY = { it }
+        ) + fadeIn(),
+        exit = slideOutVertically(
+            targetOffsetY = { it }
+        ) + fadeOut()
     ) {
-        val track = currentTrack!!
+
+        // Безпечний трек
+        val track = rememberedTrack ?: return@AnimatedVisibility
+
         val displayTitle = extractedTitle ?: track.title
 
-        var dragOffsetX by remember { mutableFloatStateOf(0f) }
-        var dragOffsetY by remember { mutableFloatStateOf(0f) }
+        var dragOffsetX by remember {
+            mutableFloatStateOf(0f)
+        }
 
-        val animatedOffsetX by animateFloatAsState(targetValue = dragOffsetX, label = "offsetX")
-        val animatedOffsetY by animateFloatAsState(targetValue = dragOffsetY, label = "offsetY")
+        var dragOffsetY by remember {
+            mutableFloatStateOf(0f)
+        }
+
+        val animatedOffsetX by animateFloatAsState(
+            targetValue = dragOffsetX,
+            label = "offsetX"
+        )
+
+        val animatedOffsetY by animateFloatAsState(
+            targetValue = dragOffsetY,
+            label = "offsetY"
+        )
 
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .padding(
+                    horizontal = 8.dp,
+                    vertical = 4.dp
+                )
                 .height(64.dp)
-                .offset { IntOffset(animatedOffsetX.roundToInt(), animatedOffsetY.roundToInt()) }
+                .offset {
+                    IntOffset(
+                        animatedOffsetX.roundToInt(),
+                        animatedOffsetY.roundToInt()
+                    )
+                }
                 .clip(RoundedCornerShape(12.dp))
                 .pointerInput(track.id) {
+
                     detectDragGestures(
+
                         onDragEnd = {
+
                             val absX = kotlin.math.abs(dragOffsetX)
                             val absY = kotlin.math.abs(dragOffsetY)
 
                             if (absX > absY) {
-                                if (dragOffsetX < -100f) viewModel.audioController.skipToPrevious()
-                                else if (dragOffsetX > 100f) viewModel.audioController.skipToNext()
+
+                                // Свайпи вліво / вправо
+                                if (dragOffsetX < -100f) {
+                                    viewModel.audioController.skipToPrevious()
+                                } else if (dragOffsetX > 100f) {
+                                    viewModel.audioController.skipToNext()
+                                }
+
                             } else {
+
+                                // Свайпи вверх / вниз
                                 if (dragOffsetY < -50f) {
+
+                                    // Відкрити повний плеєр
                                     onNavigateToPlayer(track.id)
-                                } else if (dragOffsetY > 50f) {
+
+                                } else if (dragOffsetY > 100f) {
+
+                                    // Приховати mini player
                                     isDismissed = true
+
+                                    // Даємо анімації завершитись
+                                    // перед очищенням MediaItems
+                                    viewModel.audioController.stopAndClear()
                                 }
                             }
+
+                            // Повертаємо назад
                             dragOffsetX = 0f
                             dragOffsetY = 0f
                         }
+
                     ) { change, dragAmount ->
+
                         change.consume()
+
                         dragOffsetX += dragAmount.x
                         dragOffsetY += dragAmount.y
                     }
                 }
-                .clickable { onNavigateToPlayer(track.id) }
+                .clickable {
+                    onNavigateToPlayer(track.id)
+                }
         ) {
-            // 1. Розмитий фон з обкладинки (через Coil 3)
+
+            // Blur background
             if (track.coverUrl != null) {
+
                 AsyncImage(
                     model = track.coverUrl,
                     contentDescription = "MiniPlayer Background",
@@ -103,29 +171,36 @@ fun MiniPlayer(
                         .fillMaxSize()
                         .blur(24.dp)
                 )
+
             } else {
+
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.secondaryContainer)
+                        .background(
+                            MaterialTheme.colorScheme.secondaryContainer
+                        )
                 )
             }
 
-            // 2. Темний напівпрозорий шар для контрасту
+            // Dark overlay
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.5f))
+                    .background(
+                        Color.Black.copy(alpha = 0.5f)
+                    )
             )
 
-            // 3. Контент (Іконка, Текст, Кнопки)
+            // Content
             Row(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Маленька обкладинка зліва (через Coil 3)
+
+                // Cover
                 Box(
                     modifier = Modifier
                         .size(44.dp)
@@ -133,22 +208,34 @@ fun MiniPlayer(
                         .background(Color.DarkGray),
                     contentAlignment = Alignment.Center
                 ) {
+
                     if (track.coverUrl != null) {
+
                         AsyncImage(
                             model = track.coverUrl,
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
                         )
+
                     } else {
-                        Text("🎵", color = Color.White)
+
+                        Text(
+                            text = "🎵",
+                            color = Color.White
+                        )
                     }
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(
+                    modifier = Modifier.width(12.dp)
+                )
 
-                // Назва
-                Column(modifier = Modifier.weight(1f)) {
+                // Title
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+
                     Text(
                         text = displayTitle,
                         style = MaterialTheme.typography.bodyLarge,
@@ -159,21 +246,50 @@ fun MiniPlayer(
                     )
                 }
 
-                // Кнопки керування
-                IconButton(onClick = { viewModel.audioController.skipToPrevious() }) {
-                    Icon(Icons.Default.SkipPrevious, "Попередній", tint = Color.White)
+                // Previous
+                IconButton(
+                    onClick = {
+                        viewModel.audioController.skipToPrevious()
+                    }
+                ) {
+
+                    Icon(
+                        imageVector = Icons.Default.SkipPrevious,
+                        contentDescription = "Попередній",
+                        tint = Color.White
+                    )
                 }
 
-                IconButton(onClick = { viewModel.audioController.playPause() }) {
+                // Play / Pause
+                IconButton(
+                    onClick = {
+                        viewModel.audioController.playPause()
+                    }
+                ) {
+
                     Icon(
-                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        imageVector = if (isPlaying) {
+                            Icons.Default.Pause
+                        } else {
+                            Icons.Default.PlayArrow
+                        },
                         contentDescription = "Play/Pause",
                         tint = Color.White
                     )
                 }
 
-                IconButton(onClick = { viewModel.audioController.skipToNext() }) {
-                    Icon(Icons.Default.SkipNext, "Наступний", tint = Color.White)
+                // Next
+                IconButton(
+                    onClick = {
+                        viewModel.audioController.skipToNext()
+                    }
+                ) {
+
+                    Icon(
+                        imageVector = Icons.Default.SkipNext,
+                        contentDescription = "Наступний",
+                        tint = Color.White
+                    )
                 }
             }
         }

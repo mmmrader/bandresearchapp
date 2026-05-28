@@ -5,9 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Event
-import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Notifications
@@ -16,7 +14,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.outlined.Event
-import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Search
@@ -49,13 +46,8 @@ data class BottomNavItem(
     val route: String
 )
 
+// Строго 4 менюшки, які є в нашому додатку
 val bottomNavItems = listOf(
-    BottomNavItem(
-        label = "Відкрити",
-        selectedIcon = Icons.Filled.Explore,
-        unselectedIcon = Icons.Outlined.Explore,
-        route = "discover"
-    ),
     BottomNavItem(
         label = "Каталог",
         selectedIcon = Icons.Filled.LibraryMusic,
@@ -85,15 +77,23 @@ val bottomNavItems = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
+    initialTab: Int = 0,
     onNavigateToBandDetail: (String) -> Unit = {},
     onNavigateToNotifications: () -> Unit = {},
     onNavigateToBandManager: () -> Unit = {},
     onLogout: () -> Unit = {},
-    onNavigateToPlayer: (String) -> Unit = {} // Доданий параметр для переходу на великий плеєр
+    onNavigateToPlayer: (String) -> Unit = {},
+
+    onNavigateToEditProfile: () -> Unit = {},
+    onNavigateToPlaylists: () -> Unit = {},
+    onNavigateToHistory: () -> Unit = {},
+    onNavigateToSecurity: () -> Unit = {},
+    onNavigateToHelp: () -> Unit = {}
 ) {
-    var selectedIndex by rememberSaveable { mutableIntStateOf(0) }
+    var selectedIndex by rememberSaveable { mutableIntStateOf(initialTab) }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             when (selectedIndex) {
                 0 -> TopAppBar(
@@ -112,63 +112,36 @@ fun MainScreen(
                     },
                     actions = {
                         IconButton(onClick = onNavigateToNotifications) {
-                            Icon(
-                                Icons.Default.Notifications,
-                                contentDescription = "Сповіщення"
-                            )
+                            Icon(Icons.Default.Notifications, contentDescription = "Сповіщення")
+                        }
+                        IconButton(onClick = {}) {
+                            Icon(Icons.Default.Sort, contentDescription = "Сортування")
                         }
                     }
                 )
                 1 -> TopAppBar(
-                    title = { Text("Каталог") },
-                    actions = {
-                        IconButton(onClick = {}) {
-                            Icon(
-                                Icons.Default.Sort,
-                                contentDescription = "Сортування"
-                            )
-                        }
-                    }
-                )
-                2 -> TopAppBar(
                     title = { Text("Пошук") }
                 )
-                3 -> TopAppBar(
+                2 -> TopAppBar(
                     title = { Text("Події") },
                     actions = {
                         IconButton(onClick = {}) {
-                            Icon(
-                                Icons.Default.Map,
-                                contentDescription = "Карта"
-                            )
+                            Icon(Icons.Default.Map, contentDescription = "Карта")
                         }
                         IconButton(onClick = {}) {
-                            Icon(
-                                Icons.Default.Tune,
-                                contentDescription = "Фільтри"
-                            )
+                            Icon(Icons.Default.Tune, contentDescription = "Фільтри")
                         }
                     }
                 )
-                4 -> TopAppBar(
+                3 -> TopAppBar(
                     title = { Text("Профіль") },
-                    actions = {
-                        IconButton(onClick = {}) {
-                            Icon(
-                                Icons.Default.Edit,
-                                contentDescription = "Редагувати"
-                            )
-                        }
-                    }
+                    actions = {} // ВИПРАВЛЕНО ТУТ: Порожньо, ніяких олівців чи аватарок зверху!
                 )
             }
         },
         bottomBar = {
             Column {
-                // Міні-плеєр завжди відображається над навігацією, якщо обрано трек
-                MiniPlayer(
-                    onNavigateToPlayer = onNavigateToPlayer
-                )
+                MiniPlayer(onNavigateToPlayer = onNavigateToPlayer)
 
                 NavigationBar {
                     bottomNavItems.forEachIndexed { index, item ->
@@ -177,10 +150,7 @@ fun MainScreen(
                             onClick = { selectedIndex = index },
                             icon = {
                                 Icon(
-                                    imageVector = if (selectedIndex == index)
-                                        item.selectedIcon
-                                    else
-                                        item.unselectedIcon,
+                                    imageVector = if (selectedIndex == index) item.selectedIcon else item.unselectedIcon,
                                     contentDescription = item.label
                                 )
                             },
@@ -192,25 +162,26 @@ fun MainScreen(
         }
     ) { paddingValues ->
         when (selectedIndex) {
-            0 -> DiscoverScreen(
-                modifier = Modifier.padding(paddingValues),
-                onBandClick = onNavigateToBandDetail,
-            )
-            1 -> CatalogScreen(
+            0 -> CatalogScreen(
                 modifier = Modifier.padding(paddingValues),
                 onBandClick = onNavigateToBandDetail
             )
-            2 -> SearchScreen(
+            1 -> SearchScreen(
                 modifier = Modifier.padding(paddingValues),
                 onBandClick = onNavigateToBandDetail
             )
-            3 -> EventsScreen(
+            2 -> EventsScreen(
                 modifier = Modifier.padding(paddingValues)
             )
-            4 -> ProfileScreen(
+            3 -> ProfileScreen(
                 modifier = Modifier.padding(paddingValues),
                 onNavigateToBandManager = onNavigateToBandManager,
-                onLogout = onLogout
+                onLogout = onLogout,
+                onNavigateToEditProfile = onNavigateToEditProfile,
+                onNavigateToPlaylists = onNavigateToPlaylists,
+                onNavigateToHistory = onNavigateToHistory,
+                onNavigateToSecurity = onNavigateToSecurity,
+                onNavigateToHelp = onNavigateToHelp
             )
         }
     }

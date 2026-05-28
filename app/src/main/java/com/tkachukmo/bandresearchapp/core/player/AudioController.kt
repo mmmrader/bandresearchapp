@@ -2,7 +2,7 @@ package com.tkachukmo.bandresearchapp.core.player
 
 import android.content.ComponentName
 import android.content.Context
-import android.net.Uri // ДОДАНО ІМПОРТ ДЛЯ URI
+import android.net.Uri
 import androidx.core.content.ContextCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -23,129 +23,297 @@ import javax.inject.Singleton
 class AudioController @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
-    private var mediaControllerFuture: ListenableFuture<MediaController>? = null
-    private var mediaController: MediaController? = null
 
-    private val _isPlaying = MutableStateFlow(false)
-    val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
+    private var mediaControllerFuture:
+            ListenableFuture<MediaController>? = null
 
-    private val _currentTrack = MutableStateFlow<TrackDto?>(null)
-    val currentTrack: StateFlow<TrackDto?> = _currentTrack.asStateFlow()
+    private var mediaController:
+            MediaController? = null
 
-    private val _extractedTitle = MutableStateFlow<String?>(null)
-    val extractedTitle: StateFlow<String?> = _extractedTitle.asStateFlow()
+    // Playing state
+    private val _isPlaying =
+        MutableStateFlow(false)
 
-    private val _extractedArtwork = MutableStateFlow<ByteArray?>(null)
-    val extractedArtwork: StateFlow<ByteArray?> = _extractedArtwork.asStateFlow()
+    val isPlaying: StateFlow<Boolean> =
+        _isPlaying.asStateFlow()
 
-    private val _shuffleModeEnabled = MutableStateFlow(false)
-    val shuffleModeEnabled: StateFlow<Boolean> = _shuffleModeEnabled.asStateFlow()
+    // Current track
+    private val _currentTrack =
+        MutableStateFlow<TrackDto?>(null)
 
-    private val _repeatMode = MutableStateFlow(Player.REPEAT_MODE_OFF)
-    val repeatMode: StateFlow<Int> = _repeatMode.asStateFlow()
+    val currentTrack: StateFlow<TrackDto?> =
+        _currentTrack.asStateFlow()
 
-    private var currentPlaylist: List<TrackDto> = emptyList()
+    // Extracted metadata
+    private val _extractedTitle =
+        MutableStateFlow<String?>(null)
+
+    val extractedTitle: StateFlow<String?> =
+        _extractedTitle.asStateFlow()
+
+    private val _extractedArtwork =
+        MutableStateFlow<ByteArray?>(null)
+
+    val extractedArtwork: StateFlow<ByteArray?> =
+        _extractedArtwork.asStateFlow()
+
+    // Shuffle
+    private val _shuffleModeEnabled =
+        MutableStateFlow(false)
+
+    val shuffleModeEnabled: StateFlow<Boolean> =
+        _shuffleModeEnabled.asStateFlow()
+
+    // Repeat
+    private val _repeatMode =
+        MutableStateFlow(Player.REPEAT_MODE_OFF)
+
+    val repeatMode: StateFlow<Int> =
+        _repeatMode.asStateFlow()
+
+    // Playlist
+    private val _currentPlaylist =
+        MutableStateFlow<List<TrackDto>>(emptyList())
+
+    val currentPlaylist:
+            StateFlow<List<TrackDto>> =
+        _currentPlaylist.asStateFlow()
 
     init {
         initializeController()
     }
 
     private fun initializeController() {
-        val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))
 
-        mediaControllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
+        val sessionToken = SessionToken(
+            context,
+            ComponentName(
+                context,
+                PlaybackService::class.java
+            )
+        )
+
+        mediaControllerFuture =
+            MediaController.Builder(
+                context,
+                sessionToken
+            ).buildAsync()
+
         mediaControllerFuture?.addListener({
-            mediaController = mediaControllerFuture?.get()
 
-            mediaController?.addListener(object : Player.Listener {
-                override fun onIsPlayingChanged(playing: Boolean) {
-                    _isPlaying.value = playing
-                }
+            mediaController =
+                mediaControllerFuture?.get()
 
-                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                    val id = mediaItem?.mediaId
-                    _currentTrack.value = currentPlaylist.find { it.id == id }
-                }
+            mediaController?.addListener(
 
-                override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
-                    _extractedTitle.value = mediaMetadata.title?.toString()
-                    _extractedArtwork.value = mediaMetadata.artworkData
-                }
+                object : Player.Listener {
 
-                override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
-                    _shuffleModeEnabled.value = shuffleModeEnabled
-                }
+                    override fun onIsPlayingChanged(
+                        playing: Boolean
+                    ) {
 
-                override fun onRepeatModeChanged(repeatMode: Int) {
-                    _repeatMode.value = repeatMode
+                        _isPlaying.value = playing
+                    }
+
+                    override fun onMediaItemTransition(
+                        mediaItem: MediaItem?,
+                        reason: Int
+                    ) {
+
+                        val id = mediaItem?.mediaId
+
+                        _currentTrack.value =
+                            _currentPlaylist.value.find {
+                                it.id == id
+                            }
+                    }
+
+                    override fun onMediaMetadataChanged(
+                        mediaMetadata: MediaMetadata
+                    ) {
+
+                        _extractedTitle.value =
+                            mediaMetadata.title?.toString()
+
+                        _extractedArtwork.value =
+                            mediaMetadata.artworkData
+                    }
+
+                    override fun onShuffleModeEnabledChanged(
+                        shuffleModeEnabled: Boolean
+                    ) {
+
+                        _shuffleModeEnabled.value =
+                            shuffleModeEnabled
+                    }
+
+                    override fun onRepeatModeChanged(
+                        repeatMode: Int
+                    ) {
+
+                        _repeatMode.value =
+                            repeatMode
+                    }
                 }
-            })
+            )
+
         }, ContextCompat.getMainExecutor(context))
     }
 
-    // ДОДАНО: Параметр bandName
-    fun playQueue(tracks: List<TrackDto>, startIndex: Int = 0, bandName: String = "Невідомий виконавець") {
-        currentPlaylist = tracks
-        _currentTrack.value = tracks.getOrNull(startIndex)
+    // Play playlist
+    fun playQueue(
+        tracks: List<TrackDto>,
+        startIndex: Int = 0,
+        bandName: String = "Невідомий виконавець"
+    ) {
+
+        // Оновлюємо playlist StateFlow
+        _currentPlaylist.value = tracks
+
+        // Поточний трек
+        _currentTrack.value =
+            tracks.getOrNull(startIndex)
 
         mediaController?.let { controller ->
+
             val mediaItems = tracks.map { track ->
 
-                // 1. СТВОРЮЄМО КРАСИВІ МЕТАДАНІ ДЛЯ ШТОРКИ ТА ЕКРАНУ БЛОКУВАННЯ
-                val metadata = MediaMetadata.Builder()
-                    .setTitle(track.title)      // Назва пісні
-                    .setArtist(bandName)        // Реальнa назва гурту з БД!
-                    // Якщо в тебе DTO використовує cover_url замість coverUrl - просто зміни тут:
-                    .setArtworkUri(track.coverUrl?.let { Uri.parse(it) })
-                    .build()
+                // Metadata
+                val metadata =
+                    MediaMetadata.Builder()
+                        .setTitle(track.title)
+                        .setArtist(bandName)
+                        .setArtworkUri(
+                            track.coverUrl?.let {
+                                Uri.parse(it)
+                            }
+                        )
+                        .build()
 
-                // 2. ПРИВ'ЯЗУЄМО ЇХ ДО ТРЕКУ
+                // Media item
                 MediaItem.Builder()
                     .setUri(track.audioUrl ?: "")
                     .setMediaId(track.id)
-                    .setMediaMetadata(metadata) // Ось тут відбувається магія!
+                    .setMediaMetadata(metadata)
                     .build()
             }
 
-            controller.setMediaItems(mediaItems, startIndex, C.TIME_UNSET)
+            controller.setMediaItems(
+                mediaItems,
+                startIndex,
+                C.TIME_UNSET
+            )
+
             controller.prepare()
             controller.play()
         }
     }
 
+    // Play / Pause
     fun playPause() {
+
         mediaController?.let {
-            if (it.isPlaying) it.pause() else it.play()
-        }
-    }
 
-    fun skipToNext() { mediaController?.seekToNext() }
-    fun skipToPrevious() { mediaController?.seekToPrevious() }
-
-    fun toggleShuffle() {
-        mediaController?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled }
-    }
-
-    fun toggleRepeat() {
-        mediaController?.let {
-            it.repeatMode = when (it.repeatMode) {
-                Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-                Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-                else -> Player.REPEAT_MODE_OFF
+            if (it.isPlaying) {
+                it.pause()
+            } else {
+                it.play()
             }
         }
     }
 
+    // Next
+    fun skipToNext() {
+        mediaController?.seekToNext()
+    }
+
+    // Previous
+    fun skipToPrevious() {
+        mediaController?.seekToPrevious()
+    }
+
+    // Shuffle
+    fun toggleShuffle() {
+
+        mediaController?.let {
+
+            it.shuffleModeEnabled =
+                !it.shuffleModeEnabled
+        }
+    }
+
+    // Repeat
+    fun toggleRepeat() {
+
+        mediaController?.let {
+
+            it.repeatMode =
+                when (it.repeatMode) {
+
+                    Player.REPEAT_MODE_OFF ->
+                        Player.REPEAT_MODE_ALL
+
+                    Player.REPEAT_MODE_ALL ->
+                        Player.REPEAT_MODE_ONE
+
+                    else ->
+                        Player.REPEAT_MODE_OFF
+                }
+        }
+    }
+
+    // Seek
     fun seekTo(positionSeconds: Float) {
-        mediaController?.seekTo((positionSeconds * 1000).toLong())
+
+        mediaController?.seekTo(
+            (positionSeconds * 1000).toLong()
+        )
     }
 
+    // Current position
     fun getCurrentPositionSeconds(): Float {
-        return (mediaController?.currentPosition?.toFloat() ?: 0f) / 1000f
+
+        return (
+                mediaController?.currentPosition
+                    ?.toFloat()
+                    ?: 0f
+                ) / 1000f
     }
 
+    // Duration
     fun getDurationSeconds(): Float {
-        val duration = mediaController?.duration ?: 0L
-        return if (duration == C.TIME_UNSET || duration < 0) 0f else duration / 1000f
+
+        val duration =
+            mediaController?.duration ?: 0L
+
+        return if (
+            duration == C.TIME_UNSET ||
+            duration < 0
+        ) {
+            0f
+        } else {
+            duration / 1000f
+        }
+    }
+
+    // Stop + clear queue
+    fun stopAndClear() {
+
+        mediaController?.let {
+
+            it.pause()
+            it.stop()
+            it.clearMediaItems()
+        }
+
+        _currentTrack.value = null
+        _currentPlaylist.value = emptyList()
+        _isPlaying.value = false
+    }
+    fun skipToIndex(index: Int) {
+        mediaController?.let {
+            it.seekToDefaultPosition(index)
+            it.play()
+        }
     }
 }
