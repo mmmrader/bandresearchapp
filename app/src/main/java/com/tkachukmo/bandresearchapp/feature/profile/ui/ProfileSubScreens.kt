@@ -52,13 +52,21 @@ import com.canhub.cropper.CropImageContract
 import com.canhub.cropper.CropImageContractOptions
 import com.canhub.cropper.CropImageOptions
 import com.canhub.cropper.CropImageView
-import com.tkachukmo.bandresearchapp.data.remote.dto.HistoryTrackUI
 import com.tkachukmo.bandresearchapp.data.remote.dto.PlaylistDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.TrackDto
 import com.tkachukmo.bandresearchapp.feature.profile.viewmodel.PasswordChangeState
 import com.tkachukmo.bandresearchapp.feature.profile.viewmodel.PlaylistDetailTrack
 import com.tkachukmo.bandresearchapp.feature.profile.viewmodel.ProfileViewModel
 import com.tkachukmo.bandresearchapp.feature.discover.viewmodel.PlayerViewModel
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.filled.Piano
+import androidx.compose.material.icons.filled.Work
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.GroupAdd
 
 // ==========================================
 // КОЛЬОРИ
@@ -92,39 +100,38 @@ fun EditProfileScreen(
 
     var name by remember(profile) { mutableStateOf(profile?.displayName ?: "") }
     var bio by remember(profile) { mutableStateOf(profile?.bio ?: "") }
-    var socialLink by remember(profile) { mutableStateOf(profile?.socialLink ?: "") }
-    var location by remember(profile) { mutableStateOf(profile?.location ?: "") }
-    var instrument by remember(profile) { mutableStateOf(profile?.instrument ?: "") }
-    var experience by remember(profile) { mutableStateOf(profile?.experience ?: "") }
-    var youtubeLink by remember(profile) { mutableStateOf(profile?.youtubeLink ?: "") }
-    var audioLink by remember(profile) { mutableStateOf(profile?.audioLink ?: "") }
-
-    val selectedGenres = remember(profile) {
-        mutableStateListOf<String>().apply { addAll(profile?.musicGenres ?: emptyList()) }
-    }
-
     var showSocialDialog by remember { mutableStateOf(false) }
     var showGenresDialog by remember { mutableStateOf(false) }
-    var youtubeError by remember { mutableStateOf(false) }
-
-    // Списки для випадаючих меню
-    val instrumentsList = listOf("Вокал", "Гітара", "Бас-гітара", "Барабани", "Клавішні", "Електроніка", "Інше")
-    val experienceList = listOf("Початківець", "До 1 року", "1-3 роки", "3-5 років", "Більше 5 років")
-    var instrumentExpanded by remember { mutableStateOf(false) }
-    var experienceExpanded by remember { mutableStateOf(false) }
+    var socialLink by remember(profile) { mutableStateOf(profile?.socialLink ?: "") }
+    var instrument by remember(profile) { mutableStateOf(profile?.instrument ?: "") }
+    var experience by remember(profile) { mutableStateOf(profile?.experience ?: "") }
+    var location by remember(profile) { mutableStateOf(profile?.location ?: "") }
+    var youtubeLink by remember(profile) { mutableStateOf(profile?.youtubeLink ?: "") }
+    var audioLink by remember(profile) { mutableStateOf(profile?.audioLink ?: "") }
+    var showMusicianDialog by remember { mutableStateOf(false) }
+    val selectedGenres = remember(profile) {
+        mutableStateListOf<String>().apply {
+            addAll(profile?.musicGenres ?: emptyList())
+        }
+    }
 
     val imageCropLauncher = rememberLauncherForActivityResult(CropImageContract()) { result ->
         if (result.isSuccessful) result.uriContent?.let { viewModel.uploadAvatar(context, it) }
     }
-    val standardPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    val standardPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
         uri?.let { sourceUri ->
             imageCropLauncher.launch(
                 CropImageContractOptions(
                     uri = sourceUri,
                     cropImageOptions = CropImageOptions(
-                        imageSourceIncludeGallery = true, imageSourceIncludeCamera = false,
-                        guidelines = CropImageView.Guidelines.ON, aspectRatioX = 1, aspectRatioY = 1, fixAspectRatio = true,
-                        activityBackgroundColor = android.graphics.Color.BLACK, backgroundColor = android.graphics.Color.argb(170, 0, 0, 0)
+                        imageSourceIncludeGallery = true,
+                        imageSourceIncludeCamera = false,
+                        guidelines = CropImageView.Guidelines.ON,
+                        aspectRatioX = 1, aspectRatioY = 1, fixAspectRatio = true,
+                        activityBackgroundColor = android.graphics.Color.BLACK,
+                        backgroundColor = android.graphics.Color.argb(170, 0, 0, 0)
                     )
                 )
             )
@@ -132,187 +139,366 @@ fun EditProfileScreen(
     }
 
     Scaffold(containerColor = SubBg) { padding ->
-        LazyColumn(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 24.dp)
+                .verticalScroll(rememberScrollState())
         ) {
-            item {
-                Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onNavigateBack, modifier = Modifier.offset(x = (-12).dp)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад", tint = Color.White) }
-                    Text("Профіль Музиканта", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    IconButton(
+                        onClick = onNavigateBack,
+                        modifier = Modifier.offset(x = (-12).dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад", tint = Color.White)
+                    }
+                    Text(
+                        "Редагувати профіль",
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
-                Spacer(modifier = Modifier.height(32.dp))
+            }
 
-                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Box(modifier = Modifier.align(Alignment.Center), contentAlignment = Alignment.BottomEnd) {
-                        Box(
-                            modifier = Modifier.size(110.dp).border(2.dp, SubPrimary.copy(alpha = 0.5f), CircleShape).clip(CircleShape).background(SubCardBg).clickable { standardPickerLauncher.launch("image/*") },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (profile?.avatarUrl != null) AsyncImage(model = profile!!.avatarUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                            else Icon(Icons.Default.Person, null, tint = SubTextMuted, modifier = Modifier.size(40.dp))
-                        }
-                        Box(
-                            modifier = Modifier.offset(x = 8.dp, y = 8.dp).size(40.dp).background(SubPrimary, CircleShape).border(4.dp, SubBg, CircleShape).clickable { standardPickerLauncher.launch("image/*") },
-                            contentAlignment = Alignment.Center
-                        ) { Icon(Icons.Default.PhotoCamera, null, tint = SubBg, modifier = Modifier.size(20.dp)) }
+            Spacer(modifier = Modifier.height(32.dp))
+
+            Box(
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+                contentAlignment = Alignment.BottomEnd
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(110.dp)
+                        .border(2.dp, SubPrimary.copy(alpha = 0.5f), CircleShape)
+                        .clip(CircleShape)
+                        .background(SubCardBg)
+                        .clickable { standardPickerLauncher.launch("image/*") },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (profile?.avatarUrl != null) {
+                        AsyncImage(
+                            model = profile!!.avatarUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.Person, null,
+                            tint = SubTextMuted, modifier = Modifier.size(40.dp)
+                        )
                     }
                 }
-                Spacer(modifier = Modifier.height(40.dp))
+                Box(
+                    modifier = Modifier
+                        .offset(x = 8.dp, y = 8.dp)
+                        .size(40.dp)
+                        .background(SubPrimary, CircleShape)
+                        .border(4.dp, SubBg, CircleShape)
+                        .clickable { standardPickerLauncher.launch("image/*") },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.PhotoCamera, null,
+                        tint = SubBg, modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
 
-                // === ОСНОВНА ІНФОРМАЦІЯ ===
-                Text("Основна інформація", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(40.dp))
 
-                CustomTextField("Нікнейм", name, { name = it }, trailingIcon = "@")
-                Spacer(modifier = Modifier.height(16.dp))
-                CustomTextField("Про себе (Біографія)", bio, { bio = it }, modifier = Modifier.height(120.dp), singleLine = false)
-                Spacer(modifier = Modifier.height(16.dp))
-                CustomTextField("Локація (Місто)", location, { location = it }, placeholder = "Наприклад: Київ")
+            Text("Нікнейм", color = SubPrimary, fontSize = 12.sp)
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                placeholder = { Text(profile?.displayName ?: "Введіть ваш нікнейм", color = SubTextMuted) },
+                textStyle = LocalTextStyle.current.copy(color = Color.White, fontSize = 16.sp),
+                trailingIcon = {
+                    Text(
+                        "@", color = Color.White, fontSize = 20.sp,
+                        modifier = Modifier.padding(end = 16.dp)
+                    )
+                },
+                shape = RoundedCornerShape(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = SubCardStroke, focusedBorderColor = SubPrimary,
+                    unfocusedContainerColor = SubCardBg, focusedContainerColor = SubCardBg
+                )
+            )
 
-                Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-                // === НАВИЧКИ (Резюме) ===
-                Text("Навички та Портфоліо", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(16.dp))
+            Text("Про себе (Біографія)", color = SubPrimary, fontSize = 12.sp)
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(
+                value = bio,
+                onValueChange = { bio = it },
+                modifier = Modifier.fillMaxWidth().height(140.dp),
+                placeholder = { Text(profile?.bio ?: "Розкажіть трохи про себе...", color = SubTextMuted) },
+                textStyle = LocalTextStyle.current.copy(
+                    color = Color.White, fontSize = 16.sp, lineHeight = 24.sp
+                ),
+                shape = RoundedCornerShape(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = SubCardStroke, focusedBorderColor = SubPrimary,
+                    unfocusedContainerColor = SubCardBg, focusedContainerColor = SubCardBg
+                )
+            )
 
-                // Dropdown для Інструменту
-                ExposedDropdownMenuBox(expanded = instrumentExpanded, onExpandedChange = { instrumentExpanded = !instrumentExpanded }) {
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                EditProfileMiniCard(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Default.Link,
+                    title = "Соціальні мережі",
+                    subtitle = socialLink.ifBlank { "Не додано" },
+                    onClick = { showSocialDialog = true }
+                )
+                EditProfileMiniCard(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Outlined.LibraryMusic,
+                    title = "Жанри",
+                    subtitle = if (selectedGenres.isEmpty()) "Не обрано" else selectedGenres.joinToString(", "),
+                    iconTint = SubPrimary,
+                    onClick = { showGenresDialog = true }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Секція музиканта
+            Text("Профіль музиканта", color = SubPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Інструмент", color = SubTextMuted, fontSize = 11.sp)
+                    Spacer(modifier = Modifier.height(4.dp))
                     OutlinedTextField(
                         value = instrument,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Ваш інструмент", color = SubTextMuted) },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = instrumentExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(),
-                        colors = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = SubCardStroke, focusedBorderColor = SubPrimary, unfocusedContainerColor = SubCardBg, focusedContainerColor = SubCardBg, unfocusedTextColor = Color.White, focusedTextColor = Color.White)
+                        onValueChange = { instrument = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text("Гітара, бас, барабани...", color = SubTextMuted, fontSize = 12.sp) },
+                        textStyle = LocalTextStyle.current.copy(color = Color.White, fontSize = 14.sp),
+                        leadingIcon = { Icon(Icons.Default.Piano, null, tint = SubTextMuted, modifier = Modifier.size(18.dp)) },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedBorderColor = SubCardStroke, focusedBorderColor = SubPrimary,
+                            unfocusedContainerColor = SubCardBg, focusedContainerColor = SubCardBg
+                        )
                     )
-                    ExposedDropdownMenu(expanded = instrumentExpanded, onDismissRequest = { instrumentExpanded = false }, containerColor = SubCardBg) {
-                        instrumentsList.forEach { selection ->
-                            DropdownMenuItem(text = { Text(selection, color = Color.White) }, onClick = { instrument = selection; instrumentExpanded = false })
-                        }
-                    }
                 }
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Dropdown для Досвіду
-                ExposedDropdownMenuBox(expanded = experienceExpanded, onExpandedChange = { experienceExpanded = !experienceExpanded }) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Досвід / стаж", color = SubTextMuted, fontSize = 11.sp)
+                    Spacer(modifier = Modifier.height(4.dp))
                     OutlinedTextField(
                         value = experience,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Досвід гри", color = SubTextMuted) },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = experienceExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(),
-                        colors = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = SubCardStroke, focusedBorderColor = SubPrimary, unfocusedContainerColor = SubCardBg, focusedContainerColor = SubCardBg, unfocusedTextColor = Color.White, focusedTextColor = Color.White)
+                        onValueChange = { experience = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text("3 роки, початківець...", color = SubTextMuted, fontSize = 12.sp) },
+                        textStyle = LocalTextStyle.current.copy(color = Color.White, fontSize = 14.sp),
+                        leadingIcon = { Icon(Icons.Default.Work, null, tint = SubTextMuted, modifier = Modifier.size(18.dp)) },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedBorderColor = SubCardStroke, focusedBorderColor = SubPrimary,
+                            unfocusedContainerColor = SubCardBg, focusedContainerColor = SubCardBg
+                        )
                     )
-                    ExposedDropdownMenu(expanded = experienceExpanded, onDismissRequest = { experienceExpanded = false }, containerColor = SubCardBg) {
-                        experienceList.forEach { selection ->
-                            DropdownMenuItem(text = { Text(selection, color = Color.White) }, onClick = { experience = selection; experienceExpanded = false })
-                        }
-                    }
                 }
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Відео та Аудіо
-                CustomTextField("Посилання на YouTube (Ваша гра)", youtubeLink, { youtubeLink = it; youtubeError = false }, isError = youtubeError, placeholder = "youtube.com/watch?v=...")
-                if (youtubeError) Text("Посилання має містити youtube.com або youtu.be", color = ErrorRed, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
-                Spacer(modifier = Modifier.height(16.dp))
-
-                CustomTextField("Посилання на SoundCloud / Demo", audioLink, { audioLink = it }, placeholder = "soundcloud.com/ваше_демо")
-                Spacer(modifier = Modifier.height(32.dp))
-
-                // === МЕРЕЖІ ТА ЖАНРИ ===
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    EditProfileMiniCard(modifier = Modifier.weight(1f), icon = Icons.Default.Link, title = "Соцмережі", subtitle = socialLink.ifBlank { "Не додано" }, onClick = { showSocialDialog = true })
-                    EditProfileMiniCard(modifier = Modifier.weight(1f), icon = Icons.Outlined.LibraryMusic, title = "Жанри", subtitle = if (selectedGenres.isEmpty()) "Не обрано" else "${selectedGenres.size} обрано", iconTint = SubPrimary, onClick = { showGenresDialog = true })
-                }
-                Spacer(modifier = Modifier.height(32.dp))
-
-                // === КНОПКА ЗБЕРЕЖЕННЯ ===
-                Button(
-                    onClick = {
-                        // Валідація YouTube
-                        if (youtubeLink.isNotBlank() && !youtubeLink.contains("youtu", ignoreCase = true)) {
-                            youtubeError = true
-                            return@Button
-                        }
-
-                        viewModel.updateProfileInfo(name, bio, socialLink, selectedGenres.toList(), instrument, experience, location, youtubeLink, audioLink)
-                        onNavigateBack()
-                    },
-                    modifier = Modifier.fillMaxWidth().height(60.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = SubPrimary, contentColor = SubBg),
-                    enabled = name.isNotBlank()
-                ) {
-                    Text("Зберегти профіль", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Icon(Icons.Default.CheckCircleOutline, null, modifier = Modifier.size(24.dp))
-                }
-                Spacer(modifier = Modifier.height(40.dp))
             }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text("Місто", color = SubTextMuted, fontSize = 11.sp)
+            Spacer(modifier = Modifier.height(4.dp))
+            OutlinedTextField(
+                value = location,
+                onValueChange = { location = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                placeholder = { Text("Київ, Харків, Одеса...", color = SubTextMuted) },
+                textStyle = LocalTextStyle.current.copy(color = Color.White),
+                leadingIcon = { Icon(Icons.Default.LocationOn, null, tint = SubTextMuted) },
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = SubCardStroke, focusedBorderColor = SubPrimary,
+                    unfocusedContainerColor = SubCardBg, focusedContainerColor = SubCardBg
+                )
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text("YouTube (відео-портфоліо)", color = SubTextMuted, fontSize = 11.sp)
+            Spacer(modifier = Modifier.height(4.dp))
+            OutlinedTextField(
+                value = youtubeLink,
+                onValueChange = { youtubeLink = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                placeholder = { Text("https://youtube.com/...", color = SubTextMuted) },
+                textStyle = LocalTextStyle.current.copy(color = Color.White),
+                leadingIcon = { Icon(Icons.Default.PlayCircle, null, tint = SubTextMuted) },
+                isError = youtubeLink.isNotBlank() && !youtubeLink.contains("youtube") && !youtubeLink.contains("youtu.be"),
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = SubCardStroke, focusedBorderColor = SubPrimary,
+                    unfocusedContainerColor = SubCardBg, focusedContainerColor = SubCardBg
+                )
+            )
+            if (youtubeLink.isNotBlank() && !youtubeLink.contains("youtube") && !youtubeLink.contains("youtu.be")) {
+                Text("Введіть коректне посилання на YouTube", color = ErrorRed, fontSize = 11.sp)
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text("SoundCloud / аудіо-демо", color = SubTextMuted, fontSize = 11.sp)
+            Spacer(modifier = Modifier.height(4.dp))
+            OutlinedTextField(
+                value = audioLink,
+                onValueChange = { audioLink = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                placeholder = { Text("https://soundcloud.com/...", color = SubTextMuted) },
+                textStyle = LocalTextStyle.current.copy(color = Color.White),
+                leadingIcon = { Icon(Icons.Default.Audiotrack, null, tint = SubTextMuted) },
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = SubCardStroke, focusedBorderColor = SubPrimary,
+                    unfocusedContainerColor = SubCardBg, focusedContainerColor = SubCardBg
+                )
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Button(
+                onClick = {
+                    viewModel.updateProfileInfo(
+                        newName = name,
+                        newBio = bio,
+                        newSocialLink = socialLink,
+                        newGenres = selectedGenres.toList(),
+                        newInstrument = instrument,
+                        newExperience = experience,
+                        newLocation = location,
+                        newYoutubeLink = youtubeLink,
+                        newAudioLink = audioLink
+                    )
+                    onNavigateBack()
+                },
+                modifier = Modifier.fillMaxWidth().height(60.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = SubPrimary, contentColor = SubBg),
+                enabled = name.isNotBlank()
+            ) {
+                Text("Зберегти зміни", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.width(8.dp))
+                Icon(Icons.Default.CheckCircleOutline, null, modifier = Modifier.size(24.dp))
+            }
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 
-    // Діалоги (ті самі, що були у тебе)
     if (showSocialDialog) {
         AlertDialog(
-            onDismissRequest = { showSocialDialog = false }, containerColor = SubCardBg,
+            onDismissRequest = { showSocialDialog = false },
+            containerColor = SubCardBg,
             title = { Text("Соціальні мережі", color = Color.White, fontWeight = FontWeight.Bold) },
-            text = { CustomTextField("Посилання на профіль", socialLink, { socialLink = it }) },
-            confirmButton = { Button(onClick = { showSocialDialog = false }, colors = ButtonDefaults.buttonColors(containerColor = SubPrimary, contentColor = SubBg)) { Text("Готово") } }
+            text = {
+                Column {
+                    Text(
+                        "Вкажіть посилання на ваш профіль (наприклад, Telegram або Instagram):",
+                        color = SubTextMuted, fontSize = 14.sp
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = socialLink,
+                        onValueChange = { socialLink = it },
+                        placeholder = { Text("t.me/username", color = SubTextMuted) },
+                        textStyle = LocalTextStyle.current.copy(color = Color.White),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedBorderColor = SubCardStroke,
+                            focusedBorderColor = SubPrimary
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showSocialDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = SubPrimary, contentColor = SubBg)
+                ) { Text("Готово", fontWeight = FontWeight.Bold) }
+            }
         )
     }
 
     if (showGenresDialog) {
         AlertDialog(
-            onDismissRequest = { showGenresDialog = false }, containerColor = SubCardBg,
+            onDismissRequest = { showGenresDialog = false },
+            containerColor = SubCardBg,
             title = { Text("Оберіть жанри", color = Color.White, fontWeight = FontWeight.Bold) },
             text = {
                 Box(modifier = Modifier.height(260.dp)) {
-                    LazyVerticalGrid(columns = GridCells.Fixed(2), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         items(availableMusicGenres) { genre ->
                             val isSelected = selectedGenres.contains(genre)
                             Box(
-                                modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (isSelected) SubPrimary else SubBg).border(1.dp, if (isSelected) SubPrimary else SubCardStroke, RoundedCornerShape(12.dp)).clickable { if (isSelected) selectedGenres.remove(genre) else selectedGenres.add(genre) }.padding(12.dp),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (isSelected) SubPrimary else SubBg)
+                                    .border(
+                                        1.dp,
+                                        if (isSelected) SubPrimary else SubCardStroke,
+                                        RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable {
+                                        if (isSelected) selectedGenres.remove(genre)
+                                        else selectedGenres.add(genre)
+                                    }
+                                    .padding(12.dp),
                                 contentAlignment = Alignment.Center
-                            ) { Text(genre, color = if (isSelected) SubBg else Color.White, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, fontSize = 14.sp) }
+                            ) {
+                                Text(
+                                    genre,
+                                    color = if (isSelected) SubBg else Color.White,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    fontSize = 14.sp
+                                )
+                            }
                         }
                     }
                 }
             },
-            confirmButton = { Button(onClick = { showGenresDialog = false }, colors = ButtonDefaults.buttonColors(containerColor = SubPrimary, contentColor = SubBg)) { Text("Зберегти") } }
-        )
-    }
-}
-
-// Допоміжний компонент для чистішого коду
-@Composable
-fun CustomTextField(
-    label: String, value: String, onValueChange: (String) -> Unit,
-    modifier: Modifier = Modifier.fillMaxWidth(),
-    placeholder: String = "", trailingIcon: String? = null,
-    singleLine: Boolean = true, isError: Boolean = false
-) {
-    Column {
-        Text(label, color = SubPrimary, fontSize = 12.sp)
-        Spacer(modifier = Modifier.height(8.dp))
-        OutlinedTextField(
-            value = value, onValueChange = onValueChange,
-            modifier = modifier, singleLine = singleLine,
-            placeholder = { Text(placeholder, color = SubTextMuted) },
-            textStyle = LocalTextStyle.current.copy(color = Color.White, fontSize = 16.sp),
-            trailingIcon = trailingIcon?.let { { Text(it, color = Color.White, fontSize = 20.sp, modifier = Modifier.padding(end = 16.dp)) } },
-            shape = RoundedCornerShape(16.dp),
-            isError = isError,
-            colors = OutlinedTextFieldDefaults.colors(
-                unfocusedBorderColor = SubCardStroke, focusedBorderColor = SubPrimary, errorBorderColor = ErrorRed,
-                unfocusedContainerColor = SubCardBg, focusedContainerColor = SubCardBg
-            )
+            confirmButton = {
+                Button(
+                    onClick = { showGenresDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = SubPrimary, contentColor = SubBg)
+                ) { Text("Зберегти", fontWeight = FontWeight.Bold) }
+            }
         )
     }
 }
@@ -743,8 +929,7 @@ fun PlaylistDetailScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = {
-                    // ВИКОРИСТОВУЄМО НОВУ ФУНКЦІЮ!
-                    viewModel.loadLikedTracksForPlaylist(playlist.id)
+                    viewModel.loadAvailableTracks()
                     showAddTrackSheet = true
                 },
                 containerColor = SubPrimary,
@@ -820,6 +1005,8 @@ fun PlaylistDetailScreen(
                             track = track,
                             index = index + 1,
                             onPlay = {
+                                // Завантажуємо ВЕСЬ плейліст як чергу,
+                                // а не лише треки одного гурту
                                 playerViewModel.playPlaylistQueue(
                                     playlistName = playlist.name,
                                     tracks = tracks,
@@ -868,13 +1055,10 @@ fun PlaylistDetailScreen(
             searchQuery = searchQuery,
             onSearchQueryChange = { q ->
                 searchQuery = q
-                // ВИКОРИСТОВУЄМО НОВУ ФУНКЦІЮ!
-                viewModel.loadLikedTracksForPlaylist(playlist.id, q)
+                viewModel.loadAvailableTracks(q)
             },
             onAddTrack = { trackId ->
                 viewModel.addTrackToPlaylist(playlist.id, trackId)
-                // Одразу оновлюємо шторку, щоб щойно доданий трек з неї зник
-                viewModel.loadLikedTracksForPlaylist(playlist.id, searchQuery)
             },
             onDismiss = {
                 showAddTrackSheet = false
@@ -1115,100 +1299,20 @@ fun HistoryScreen(
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     val history by viewModel.listeningHistory.collectAsState()
-    val errorMessage by viewModel.errorMessage.collectAsState()
-    var query by remember { mutableStateOf("") }
-    var onlyToday by remember { mutableStateOf(false) }
-    var itemToDelete by remember { mutableStateOf<HistoryTrackUI?>(null) }
-    var showClearDialog by remember { mutableStateOf(false) }
-    val snackbarHostState = remember { SnackbarHostState() }
 
-    val filteredHistory = remember(history, query, onlyToday) {
-        history.filter { item ->
-            val matchesQuery = query.isBlank() ||
-                    item.trackTitle.contains(query, ignoreCase = true) ||
-                    item.bandName.contains(query, ignoreCase = true)
-            val matchesDate = !onlyToday || item.listenedAt.take(10) == currentDateToken()
-            matchesQuery && matchesDate
-        }
-    }
-    val todayListens = remember(history) {
-        history.count { it.listenedAt.take(10) == currentDateToken() }
-    }
-    val favoriteBand = remember(history) {
-        history
-            .groupingBy { it.bandName }
-            .eachCount()
-            .maxByOrNull { it.value }
-            ?.key ?: "-"
-    }
-
-    LaunchedEffect(errorMessage) {
-        errorMessage?.let {
-            snackbarHostState.showSnackbar(it)
-            viewModel.clearError()
-        }
-    }
-
-    if (itemToDelete != null) {
-        AlertDialog(
-            onDismissRequest = { itemToDelete = null },
-            title = { Text("Видалити запис?") },
-            text = { Text("Трек зникне лише з історії прослуховувань.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.removeHistoryItem(itemToDelete!!.historyId)
-                        itemToDelete = null
-                    }
-                ) { Text("Видалити", color = ErrorRed) }
-            },
-            dismissButton = { TextButton(onClick = { itemToDelete = null }) { Text("Скасувати") } }
-        )
-    }
-
-    if (showClearDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearDialog = false },
-            title = { Text("Очистити історію?") },
-            text = { Text("Усі записи історії прослуховувань буде видалено.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.clearListeningHistory()
-                        showClearDialog = false
-                    }
-                ) { Text("Очистити", color = ErrorRed) }
-            },
-            dismissButton = { TextButton(onClick = { showClearDialog = false }) { Text("Скасувати") } }
-        )
-    }
-
-    Scaffold(
-        containerColor = SubBg,
-        snackbarHost = {
-            SnackbarHost(snackbarHostState) { data ->
-                Snackbar(snackbarData = data, containerColor = SubCardBg, contentColor = Color.White, actionColor = SubPrimary)
-            }
-        }
-    ) { padding ->
+    Scaffold(containerColor = SubBg) { padding ->
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
             item {
                 Column(modifier = Modifier.padding(horizontal = 24.dp)) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        modifier = Modifier.padding(top = 16.dp)
                     ) {
                         IconButton(
                             onClick = onNavigateBack,
                             modifier = Modifier.offset(x = (-12).dp)
                         ) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад", tint = Color.White)
-                        }
-                        if (history.isNotEmpty()) {
-                            IconButton(onClick = { showClearDialog = true }) {
-                                Icon(Icons.Default.DeleteSweep, "Очистити історію", tint = ErrorRed)
-                            }
                         }
                     }
                     Text(
@@ -1220,65 +1324,9 @@ fun HistoryScreen(
                         "Тут з'являтимуться треки, які ти слухав.",
                         color = SubTextMuted, fontSize = 14.sp
                     )
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(32.dp))
 
-                    if (history.isNotEmpty()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            HistorySummaryCard(
-                                title = "Усього",
-                                value = history.size.toString(),
-                                modifier = Modifier.weight(1f)
-                            )
-                            HistorySummaryCard(
-                                title = "Сьогодні",
-                                value = todayListens.toString(),
-                                modifier = Modifier.weight(1f)
-                            )
-                            HistorySummaryCard(
-                                title = "Топ гурт",
-                                value = favoriteBand,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        OutlinedTextField(
-                            value = query,
-                            onValueChange = { query = it },
-                            label = { Text("Пошук в історії", color = SubTextMuted) },
-                            leadingIcon = { Icon(Icons.Default.Search, null, tint = SubTextMuted) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            textStyle = LocalTextStyle.current.copy(color = Color.White),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                unfocusedBorderColor = SubCardStroke,
-                                focusedBorderColor = SubPrimary,
-                                unfocusedContainerColor = SubCardBg,
-                                focusedContainerColor = SubCardBg
-                            )
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(
-                                selected = !onlyToday,
-                                onClick = { onlyToday = false },
-                                label = { Text("Уся історія") }
-                            )
-                            FilterChip(
-                                selected = onlyToday,
-                                onClick = { onlyToday = true },
-                                label = { Text("Сьогодні") }
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(20.dp))
-                    } else {
-                        Spacer(modifier = Modifier.height(32.dp))
-                    }
-
-                    if (filteredHistory.isEmpty()) {
+                    if (history.isEmpty()) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1308,8 +1356,8 @@ fun HistoryScreen(
                 }
             }
 
-            if (filteredHistory.isNotEmpty()) {
-                val groupedHistory = filteredHistory.groupBy { it.listenedAt.take(10) }
+            if (history.isNotEmpty()) {
+                val groupedHistory = history.groupBy { it.listenedAt.take(10) }
                 groupedHistory.forEach { (date, items) ->
                     item {
                         Column(modifier = Modifier.padding(horizontal = 24.dp)) {
@@ -1330,7 +1378,7 @@ fun HistoryScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { onPlayTrack(item.trackId) }
+                                .clickable { onPlayTrack(item.historyId) }
                                 .padding(horizontal = 24.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -1359,61 +1407,13 @@ fun HistoryScreen(
                                 )
                                 Text(item.bandName, fontSize = 12.sp, color = SubTextMuted)
                             }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(item.listenedAt.takeLast(5), fontSize = 12.sp, color = SubTextMuted)
-                                Row {
-                                    IconButton(onClick = { onPlayTrack(item.trackId) }, modifier = Modifier.size(36.dp)) {
-                                        Icon(Icons.Default.PlayArrow, null, tint = SubPrimary)
-                                    }
-                                    IconButton(onClick = { itemToDelete = item }, modifier = Modifier.size(36.dp)) {
-                                        Icon(Icons.Default.Close, null, tint = SubTextMuted)
-                                    }
-                                }
-                            }
+                            Text(item.listenedAt.takeLast(5), fontSize = 12.sp, color = SubTextMuted)
                         }
                     }
                 }
             }
         }
     }
-}
-
-@Composable
-private fun HistorySummaryCard(
-    title: String,
-    value: String,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(SubCardBg)
-            .border(1.dp, SubCardStroke, RoundedCornerShape(14.dp))
-            .padding(12.dp)
-            .heightIn(min = 64.dp),
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            text = title,
-            color = SubTextMuted,
-            fontSize = 11.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = value,
-            color = Color.White,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-private fun currentDateToken(): String {
-    return java.time.LocalDate.now().toString()
 }
 
 // ==========================================
@@ -1762,7 +1762,7 @@ fun HelpScreen(onNavigateBack: () -> Unit) {
                 Button(
                     onClick = {
                         context.startActivity(
-                            Intent(Intent.ACTION_VIEW, "https://t.me/mikhail_tkachuk".toUri())
+                            Intent(Intent.ACTION_VIEW, "https://t.me/underrag3ed".toUri())
                         )
                     },
                     modifier = Modifier.fillMaxWidth().height(64.dp),

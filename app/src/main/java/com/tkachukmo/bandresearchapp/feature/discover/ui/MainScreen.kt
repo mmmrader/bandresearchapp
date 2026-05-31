@@ -8,10 +8,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Message
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.LibraryMusic
@@ -46,7 +46,6 @@ data class BottomNavItem(
     val route: String
 )
 
-// Строго 4 менюшки, які є в нашому додатку
 val bottomNavItems = listOf(
     BottomNavItem(
         label = "Каталог",
@@ -83,7 +82,7 @@ fun MainScreen(
     onNavigateToBandManager: () -> Unit = {},
     onLogout: () -> Unit = {},
     onNavigateToPlayer: (String) -> Unit = {},
-
+    onNavigateToChatList: () -> Unit = {},
     onNavigateToEditProfile: () -> Unit = {},
     onNavigateToPlaylists: () -> Unit = {},
     onNavigateToHistory: () -> Unit = {},
@@ -111,11 +110,11 @@ fun MainScreen(
                         }
                     },
                     actions = {
+                        IconButton(onClick = onNavigateToChatList) {
+                            Icon(Icons.Default.Message, contentDescription = "Повідомлення")
+                        }
                         IconButton(onClick = onNavigateToNotifications) {
                             Icon(Icons.Default.Notifications, contentDescription = "Сповіщення")
-                        }
-                        IconButton(onClick = {}) {
-                            Icon(Icons.Default.Sort, contentDescription = "Сортування")
                         }
                     }
                 )
@@ -135,7 +134,7 @@ fun MainScreen(
                 )
                 3 -> TopAppBar(
                     title = { Text("Профіль") },
-                    actions = {} // ВИПРАВЛЕНО ТУТ: Порожньо, ніяких олівців чи аватарок зверху!
+                    actions = {}
                 )
             }
         },
@@ -182,7 +181,8 @@ fun MainScreen(
                 onNavigateToHistory = onNavigateToHistory,
                 onNavigateToSecurity = onNavigateToSecurity,
                 onNavigateToHelp = onNavigateToHelp,
-                onNavigateToBandDetail = onNavigateToBandDetail
+                onNavigateToBandDetail = onNavigateToBandDetail,
+                onNavigateToSearch = { selectedIndex = 1 } // Перехід на вкладку пошуку
             )
         }
     }

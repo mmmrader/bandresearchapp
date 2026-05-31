@@ -284,3 +284,18 @@ data class NotificationDto(
     @SerialName("is_read") val isRead: Boolean = false,
     @SerialName("created_at") val createdAt: String? = null
 )
+@Serializable
+data class ChatMessageDto(
+    val id: String,
+    @SerialName("sender_id") val senderId: String,
+    @SerialName("recipient_id") val recipientId: String,
+    @SerialName("band_id") val bandId: String? = null,
+    val text: String,
+    @SerialName("created_at") val createdAt: String? = null
+)
+@Serializable
+data class HistoryInsertDto(
+    @SerialName("user_id") val userId: String,
+    @SerialName("track_id") val trackId: String,
+    @SerialName("listened_at") val listenedAt: String
+)

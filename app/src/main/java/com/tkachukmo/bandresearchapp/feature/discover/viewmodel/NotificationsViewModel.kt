@@ -24,10 +24,6 @@ class NotificationsViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    init {
-        loadNotifications()
-    }
-
     fun loadNotifications() {
         viewModelScope.launch {
             _isLoading.value = true
@@ -37,8 +33,8 @@ class NotificationsViewModel @Inject constructor(
                     .select { filter { eq("user_id", userId) } }
                     .decodeList<NotificationDto>()
                     .sortedByDescending { it.createdAt ?: "" }
-            } catch (_: Throwable) {
-                _notifications.value = emptyList()
+            } catch (e: Exception) {
+                e.printStackTrace()
             } finally {
                 _isLoading.value = false
             }
@@ -47,27 +43,29 @@ class NotificationsViewModel @Inject constructor(
 
     fun markAsRead(notificationId: String) {
         viewModelScope.launch {
-            _notifications.value = _notifications.value.map {
-                if (it.id == notificationId) it.copy(isRead = true) else it
-            }
-            runCatching {
-                supabaseClient.postgrest["notifications"].update({ set("is_read", true) }) {
-                    filter { eq("id", notificationId) }
+            try {
+                supabaseClient.postgrest["notifications"].update(
+                    { set("is_read", true) }
+                ) { filter { eq("id", notificationId) } }
+                _notifications.value = _notifications.value.map { n ->
+                    if (n.id == notificationId) n.copy(isRead = true) else n
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }
 
     fun markAllRead() {
         viewModelScope.launch {
-            val ids = _notifications.value.map { it.id }
-            _notifications.value = _notifications.value.map { it.copy(isRead = true) }
-            runCatching {
-                ids.forEach { id ->
-                    supabaseClient.postgrest["notifications"].update({ set("is_read", true) }) {
-                        filter { eq("id", id) }
-                    }
-                }
+            try {
+                val userId = supabaseClient.auth.currentUserOrNull()?.id ?: return@launch
+                supabaseClient.postgrest["notifications"].update(
+                    { set("is_read", true) }
+                ) { filter { eq("user_id", userId); eq("is_read", false) } }
+                _notifications.value = _notifications.value.map { it.copy(isRead = true) }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }

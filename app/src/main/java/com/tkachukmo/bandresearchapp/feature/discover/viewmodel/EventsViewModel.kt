@@ -23,22 +23,27 @@ class EventsViewModel @Inject constructor(
     private val supabaseClient: SupabaseClient
 ) : ViewModel() {
 
+    // Тільки події від підписаних гуртів
     private val _events = MutableStateFlow<List<BandEventDto>>(emptyList())
     val events: StateFlow<List<BandEventDto>> = _events.asStateFlow()
 
+    // Гурти на які підписаний користувач
     private val _followedBands = MutableStateFlow<List<BandDto>>(emptyList())
     val followedBands: StateFlow<List<BandDto>> = _followedBands.asStateFlow()
 
-    private val _comments = MutableStateFlow<Map<String, List<EventCommentDto>>>(emptyMap())
-    val comments: StateFlow<Map<String, List<EventCommentDto>>> = _comments.asStateFlow()
-
+    // ID подій які лайкнув юзер
     private val _likedEventIds = MutableStateFlow<Set<String>>(emptySet())
     val likedEventIds: StateFlow<Set<String>> = _likedEventIds.asStateFlow()
 
+    // ID подій на які RSVP («Піду»)
     private val _rsvpEventIds = MutableStateFlow<Set<String>>(emptySet())
     val rsvpEventIds: StateFlow<Set<String>> = _rsvpEventIds.asStateFlow()
 
-    private val _isLoading = MutableStateFlow(false)
+    // Коментарі: eventId -> список коментарів
+    private val _comments = MutableStateFlow<Map<String, List<EventCommentDto>>>(emptyMap())
+    val comments: StateFlow<Map<String, List<EventCommentDto>>> = _comments.asStateFlow()
+
+    private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val _message = MutableStateFlow<String?>(null)
@@ -52,115 +57,165 @@ class EventsViewModel @Inject constructor(
         _message.value = null
     }
 
+    // ==========================================
+    // ЗАВАНТАЖЕННЯ СТРІЧКИ ПІДПИСОК
+    // ==========================================
+
     fun loadFeed() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
                 val userId = supabaseClient.auth.currentUserOrNull()?.id
-                if (userId == null) {
-                    _events.value = fallbackEvents
-                    return@launch
-                }
+                    ?: run { _isLoading.value = false; return@launch }
 
+                // 1. Отримуємо підписки користувача
                 val follows = supabaseClient.postgrest["follows"]
                     .select { filter { eq("user_id", userId) } }
                     .decodeList<FollowDto>()
 
                 val bandIds = follows.map { it.bandId }
+
                 if (bandIds.isEmpty()) {
                     _followedBands.value = emptyList()
                     _events.value = emptyList()
                     return@launch
                 }
 
-                _followedBands.value = supabaseClient.postgrest["bands"]
+                // 2. Завантажуємо гурти підписок
+                val bands = supabaseClient.postgrest["bands"]
                     .select { filter { isIn("id", bandIds) } }
                     .decodeList<BandDto>()
+                _followedBands.value = bands
 
-                val loadedEvents = supabaseClient.postgrest["band_events"]
+                // 3. Завантажуємо події ТІЛЬКИ від підписаних гуртів
+                val allEvents = supabaseClient.postgrest["band_events"]
                     .select { filter { isIn("band_id", bandIds) } }
                     .decodeList<BandEventDto>()
                     .sortedByDescending { it.createdAt ?: it.eventDate ?: "" }
 
-                _events.value = loadedEvents
+                // Додаємо назву гурту до події якщо її немає
+                val bandsById = bands.associateBy { it.id }
+                _events.value = allEvents.map { event ->
+                    if (event.bandName == null) {
+                        event.copy(bandName = bandsById[event.bandId]?.name)
+                    } else event
+                }
 
-                _likedEventIds.value = supabaseClient.postgrest["event_likes"]
-                    .select { filter { eq("user_id", userId) } }
-                    .decodeList<EventReactionDto>()
-                    .map { it.eventId }
-                    .toSet()
+                // 4. Завантажуємо лайки та RSVP поточного юзера
+                loadUserReactions(userId, allEvents.map { it.id })
 
-                _rsvpEventIds.value = supabaseClient.postgrest["event_rsvps"]
-                    .select { filter { eq("user_id", userId) } }
-                    .decodeList<EventReactionDto>()
-                    .map { it.eventId }
-                    .toSet()
-            } catch (t: Throwable) {
-                _events.value = fallbackEvents
-                _message.value = "Показано приклад стрічки. Перевірте таблиці band_events, event_likes, event_comments та event_rsvps."
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _message.value = "Помилка завантаження стрічки"
             } finally {
                 _isLoading.value = false
             }
         }
     }
 
+    private suspend fun loadUserReactions(userId: String, eventIds: List<String>) {
+        if (eventIds.isEmpty()) return
+        try {
+            val liked = supabaseClient.postgrest["event_likes"]
+                .select { filter { eq("user_id", userId); isIn("event_id", eventIds) } }
+                .decodeList<EventReactionDto>()
+            _likedEventIds.value = liked.map { it.eventId }.toSet()
+        } catch (_: Exception) {}
+
+        try {
+            val rsvp = supabaseClient.postgrest["event_rsvp"]
+                .select { filter { eq("user_id", userId); isIn("event_id", eventIds) } }
+                .decodeList<EventReactionDto>()
+            _rsvpEventIds.value = rsvp.map { it.eventId }.toSet()
+        } catch (_: Exception) {}
+    }
+
+    // ==========================================
+    // ЛАЙК
+    // ==========================================
+
     fun toggleLike(eventId: String) {
         viewModelScope.launch {
             val userId = supabaseClient.auth.currentUserOrNull()?.id ?: return@launch
-            val isLiked = eventId in _likedEventIds.value
-            _likedEventIds.value = if (isLiked) _likedEventIds.value - eventId else _likedEventIds.value + eventId
-            _events.value = _events.value.map { event ->
-                if (event.id == eventId) {
-                    event.copy(likesCount = (event.likesCount + if (isLiked) -1 else 1).coerceAtLeast(0))
-                } else event
-            }
             try {
+                val isLiked = eventId in _likedEventIds.value
                 if (isLiked) {
                     supabaseClient.postgrest["event_likes"].delete {
                         filter { eq("event_id", eventId); eq("user_id", userId) }
                     }
+                    _likedEventIds.value = _likedEventIds.value - eventId
+                    updateEventLikesCount(eventId, -1)
                 } else {
-                    supabaseClient.postgrest["event_likes"].insert(EventReactionDto(eventId, userId))
+                    supabaseClient.postgrest["event_likes"].insert(
+                        EventReactionDto(eventId = eventId, userId = userId)
+                    )
+                    _likedEventIds.value = _likedEventIds.value + eventId
+                    updateEventLikesCount(eventId, +1)
                 }
-            } catch (_: Throwable) {
-                _message.value = "Реакцію збережено локально для цього сеансу."
+            } catch (e: Exception) {
+                _message.value = "Помилка: ${e.message}"
             }
         }
     }
+
+    private fun updateEventLikesCount(eventId: String, delta: Int) {
+        _events.value = _events.value.map { event ->
+            if (event.id == eventId) event.copy(likesCount = maxOf(0, event.likesCount + delta))
+            else event
+        }
+    }
+
+    // ==========================================
+    // RSVP — «Піду»
+    // ==========================================
 
     fun toggleRsvp(eventId: String) {
         viewModelScope.launch {
             val userId = supabaseClient.auth.currentUserOrNull()?.id ?: return@launch
-            val isGoing = eventId in _rsvpEventIds.value
-            _rsvpEventIds.value = if (isGoing) _rsvpEventIds.value - eventId else _rsvpEventIds.value + eventId
-            _events.value = _events.value.map { event ->
-                if (event.id == eventId) {
-                    event.copy(rsvpCount = (event.rsvpCount + if (isGoing) -1 else 1).coerceAtLeast(0))
-                } else event
-            }
             try {
+                val isGoing = eventId in _rsvpEventIds.value
                 if (isGoing) {
-                    supabaseClient.postgrest["event_rsvps"].delete {
+                    supabaseClient.postgrest["event_rsvp"].delete {
                         filter { eq("event_id", eventId); eq("user_id", userId) }
                     }
+                    _rsvpEventIds.value = _rsvpEventIds.value - eventId
+                    updateEventRsvpCount(eventId, -1)
+                    _message.value = "Скасовано RSVP"
                 } else {
-                    supabaseClient.postgrest["event_rsvps"].insert(EventReactionDto(eventId, userId))
+                    supabaseClient.postgrest["event_rsvp"].insert(
+                        EventReactionDto(eventId = eventId, userId = userId)
+                    )
+                    _rsvpEventIds.value = _rsvpEventIds.value + eventId
+                    updateEventRsvpCount(eventId, +1)
+                    _message.value = "Відмічено «Піду»"
                 }
-            } catch (_: Throwable) {
-                _message.value = "Позначку RSVP збережено локально для цього сеансу."
+            } catch (e: Exception) {
+                _message.value = "Помилка: ${e.message}"
             }
         }
     }
 
+    private fun updateEventRsvpCount(eventId: String, delta: Int) {
+        _events.value = _events.value.map { event ->
+            if (event.id == eventId) event.copy(rsvpCount = maxOf(0, event.rsvpCount + delta))
+            else event
+        }
+    }
+
+    // ==========================================
+    // КОМЕНТАРІ
+    // ==========================================
+
     fun loadComments(eventId: String) {
         viewModelScope.launch {
             try {
-                val eventComments = supabaseClient.postgrest["event_comments"]
+                val list = supabaseClient.postgrest["event_comments"]
                     .select { filter { eq("event_id", eventId) } }
                     .decodeList<EventCommentDto>()
-                _comments.value = _comments.value + (eventId to eventComments)
-            } catch (_: Throwable) {
-                _comments.value = _comments.value + (eventId to emptyList())
+                    .sortedBy { it.createdAt }
+                _comments.value = _comments.value + (eventId to list)
+            } catch (e: Exception) {
+                _message.value = "Не вдалося завантажити коментарі"
             }
         }
     }
@@ -169,66 +224,19 @@ class EventsViewModel @Inject constructor(
         if (text.isBlank()) return
         viewModelScope.launch {
             val userId = supabaseClient.auth.currentUserOrNull()?.id ?: return@launch
-            val localComment = EventCommentDto(
-                id = "local-${System.currentTimeMillis()}",
-                eventId = eventId,
-                userId = userId,
-                authorName = "Ви",
-                text = text.trim()
-            )
-            _comments.value = _comments.value + (eventId to ((_comments.value[eventId] ?: emptyList()) + localComment))
-            _events.value = _events.value.map {
-                if (it.id == eventId) it.copy(commentsCount = it.commentsCount + 1) else it
-            }
             try {
-                supabaseClient.postgrest["event_comments"].insert(EventCommentInsertDto(eventId, userId, text.trim()))
-            } catch (_: Throwable) {
-                _message.value = "Коментар додано локально для цього сеансу."
+                supabaseClient.postgrest["event_comments"].insert(
+                    EventCommentInsertDto(eventId = eventId, userId = userId, text = text)
+                )
+                // Оновлюємо лічильник коментарів локально
+                _events.value = _events.value.map { event ->
+                    if (event.id == eventId) event.copy(commentsCount = event.commentsCount + 1)
+                    else event
+                }
+                loadComments(eventId)
+            } catch (e: Exception) {
+                _message.value = "Не вдалося надіслати коментар"
             }
         }
     }
 }
-
-private val fallbackEvents = listOf(
-    BandEventDto(
-        id = "demo-release",
-        bandId = "demo-1",
-        bandName = "The Unsleeping",
-        title = "Новий сингл: City Noise",
-        description = "Автоматична подія релізу з посиланнями на стримінги.",
-        type = "release",
-        smartLink = "https://open.spotify.com",
-        spotifyUrl = "https://open.spotify.com",
-        appleMusicUrl = "https://music.apple.com",
-        youtubeMusicUrl = "https://music.youtube.com",
-        likesCount = 24,
-        commentsCount = 3,
-        createdAt = "2026-05-28T10:00:00Z"
-    ),
-    BandEventDto(
-        id = "demo-show",
-        bandId = "demo-2",
-        bandName = "North Stage",
-        title = "Живий виступ у Docker Pub",
-        description = "Концерт для підписників з RSVP.",
-        type = "concert",
-        eventDate = "2026-06-12",
-        venue = "Docker Pub",
-        city = "Київ",
-        likesCount = 58,
-        rsvpCount = 17,
-        createdAt = "2026-05-27T18:00:00Z"
-    ),
-    BandEventDto(
-        id = "demo-video",
-        bandId = "demo-3",
-        bandName = "Signal Bloom",
-        title = "Прем'єра кліпу на YouTube",
-        description = "Відеореліз автоматично потрапив у стрічку.",
-        type = "video",
-        youtubeMusicUrl = "https://music.youtube.com",
-        likesCount = 41,
-        commentsCount = 6,
-        createdAt = "2026-05-26T12:00:00Z"
-    )
-)

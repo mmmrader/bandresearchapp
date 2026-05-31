@@ -1,5 +1,6 @@
 ﻿package com.tkachukmo.bandresearchapp.feature.discover.ui
 
+import android.content.res.Configuration
 import android.graphics.BitmapFactory
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -15,7 +16,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-// Р”РћР”РђРќРћ Р†РњРџРћР РўР Р”Р›РЇ РќРћР’РРҐ Р†РљРћРќРћРљ:
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.*
@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -75,6 +76,10 @@ fun PlayerScreen(
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
+    // Перевірка орієнтації екрану
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     LaunchedEffect(trackId) {
         viewModel.loadTrack(trackId)
         viewModel.checkIfTrackIsLiked(trackId)
@@ -98,8 +103,8 @@ fun PlayerScreen(
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
 
-        // ================= MAIN =================
-        Column(
+        // ================= MAIN (Background + UI) =================
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .clickable(enabled = isQueueVisible) { isQueueVisible = false }
@@ -117,46 +122,124 @@ fun PlayerScreen(
                     }
                 }
         ) {
-            Box(Modifier.fillMaxSize()) {
-                if (track!!.coverUrl != null) {
-                    AsyncImage(
-                        model = track!!.coverUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize().blur(80.dp)
+            // Фон з блюром (Залишається однаковим для обох орієнтацій)
+            if (track!!.coverUrl != null) {
+                AsyncImage(
+                    model = track!!.coverUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().blur(80.dp)
+                )
+            } else if (embeddedArtworkBitmap != null) {
+                Image(
+                    bitmap = embeddedArtworkBitmap,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().blur(80.dp)
+                )
+            } else {
+                Box(
+                    Modifier.fillMaxSize().background(
+                        Brush.verticalGradient(listOf(Color(0xFF2A2A35), Color(0xFF121218)))
                     )
-                } else if (embeddedArtworkBitmap != null) {
-                    Image(
-                        bitmap = embeddedArtworkBitmap,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize().blur(80.dp)
-                    )
-                } else {
+                )
+            }
+
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(0.5f)))
+
+            // КОНТЕНТ ПЛЕЄРА ЗАЛЕЖНО ВІД ОРІЄНТАЦІЇ
+            if (isLandscape) {
+                // --- АЛЬБОМНА ОРІЄНТАЦІЯ ---
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .systemBarsPadding(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Ліва частина: Обкладинка
                     Box(
-                        Modifier.fillMaxSize().background(
-                            Brush.verticalGradient(listOf(Color(0xFF2A2A35), Color(0xFF121218)))
-                        )
-                    )
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        PlayerArtwork(track!!, embeddedArtworkBitmap, isPlaying, viewModel)
+                    }
+
+                    // Права частина: Керування
+                    Column(
+                        modifier = Modifier
+                            .weight(1.2f)
+                            .fillMaxHeight()
+                            .padding(end = 24.dp, top = 16.dp, bottom = 16.dp),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        // Верхня панель
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            Arrangement.SpaceBetween,
+                            Alignment.CenterVertically
+                        ) {
+                            IconButton(onClick = onNavigateBack) {
+                                Icon(Icons.Default.KeyboardArrowDown, null, tint = Color.White)
+                            }
+                            Text("Зараз грає", color = Color.White.copy(0.8f))
+                            IconButton(onClick = {
+                                viewModel.loadUserPlaylists()
+                                showBottomSheet = true
+                            }) {
+                                Icon(Icons.Default.MoreVert, null, tint = Color.White)
+                            }
+                        }
+
+                        Spacer(Modifier.weight(1f))
+
+                        // Інформація про трек
+                        TrackInfoRow(displayTitle, displayArtist, uniqueListenersCount, isLiked) {
+                            viewModel.toggleLikeTrack(track!!.id)
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        // Повзунок
+                        PlayerSlider(progress, duration) {
+                            viewModel.seekTo(it)
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Кнопки плеєра
+                        PlayerControls(isPlaying, shuffleMode, repeatMode, viewModel)
+
+                        Spacer(Modifier.weight(1f))
+
+                        // Індикатор черги
+                        Box(modifier = Modifier.fillMaxWidth().height(20.dp), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.KeyboardArrowUp, null, tint = Color.White.copy(alpha = 0.5f))
+                        }
+                    }
                 }
-
-                Box(Modifier.fillMaxSize().background(Color.Black.copy(0.5f)))
-
+            } else {
+                // --- ПОРТРЕТНА ОРІЄНТАЦІЯ ---
                 Column(
-                    Modifier.fillMaxSize().padding(24.dp).systemBarsPadding(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .systemBarsPadding(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    // Верхня панель
                     Row(
-                        Modifier.fillMaxWidth(),
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp, vertical = 16.dp),
                         Arrangement.SpaceBetween,
                         Alignment.CenterVertically
                     ) {
                         IconButton(onClick = onNavigateBack) {
                             Icon(Icons.Default.KeyboardArrowDown, null, tint = Color.White)
                         }
-
                         Text("Зараз грає", color = Color.White.copy(0.8f))
-
                         IconButton(onClick = {
                             viewModel.loadUserPlaylists()
                             showBottomSheet = true
@@ -165,30 +248,42 @@ fun PlayerScreen(
                         }
                     }
 
-                    Spacer(Modifier.weight(1f))
-
-                    PlayerArtwork(track!!, embeddedArtworkBitmap, isPlaying, viewModel)
-
-                    Spacer(Modifier.weight(1f))
-
-                    TrackInfoRow(displayTitle, displayArtist, uniqueListenersCount, isLiked) {
-                        viewModel.toggleLikeTrack(track!!.id)
+                    // Обкладинка треку
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        PlayerArtwork(track!!, embeddedArtworkBitmap, isPlaying, viewModel)
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                    // Блок керування
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp, vertical = 16.dp)
+                    ) {
+                        TrackInfoRow(displayTitle, displayArtist, uniqueListenersCount, isLiked) {
+                            viewModel.toggleLikeTrack(track!!.id)
+                        }
 
-                    PlayerSlider(progress, duration) {
-                        viewModel.seekTo(it)
-                    }
+                        Spacer(modifier = Modifier.height(24.dp))
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                        PlayerSlider(progress, duration) {
+                            viewModel.seekTo(it)
+                        }
 
-                    PlayerControls(isPlaying, shuffleMode, repeatMode, viewModel)
+                        Spacer(modifier = Modifier.height(16.dp))
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                        PlayerControls(isPlaying, shuffleMode, repeatMode, viewModel)
 
-                    Box(modifier = Modifier.fillMaxWidth().height(20.dp), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.KeyboardArrowUp, null, tint = Color.White.copy(alpha = 0.5f))
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Box(modifier = Modifier.fillMaxWidth().height(20.dp), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.KeyboardArrowUp, null, tint = Color.White.copy(alpha = 0.5f))
+                        }
                     }
                 }
             }
@@ -270,7 +365,7 @@ fun PlayerScreen(
 }
 
 // ==========================================
-// РљРћРњРџРћРќР•РќРўР Р†РќРўР•Р Р¤Р•Р™РЎРЈ
+// КОМПОНЕНТИ ІНТЕРФЕЙСУ
 // ==========================================
 
 @Composable
@@ -281,8 +376,8 @@ private fun PlayerArtwork(track: TrackDto, embeddedBitmap: androidx.compose.ui.g
 
     Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)
+            .fillMaxSize()
+            .aspectRatio(1f) // Зберігає квадратну форму
             .scale(artScale)
             .offset { IntOffset(animatedOffsetX.roundToInt(), 0) }
             .clip(RoundedCornerShape(24.dp))

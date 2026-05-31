@@ -9,6 +9,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -38,8 +40,6 @@ import com.canhub.cropper.CropImageContractOptions
 import com.canhub.cropper.CropImageOptions
 import com.canhub.cropper.CropImageView
 import com.tkachukmo.bandresearchapp.data.remote.dto.BandDto
-import com.tkachukmo.bandresearchapp.data.remote.dto.PlaylistDto
-import com.tkachukmo.bandresearchapp.data.remote.dto.VacancyDto
 import com.tkachukmo.bandresearchapp.feature.profile.viewmodel.ProfileViewModel
 
 // ==========================================
@@ -79,6 +79,7 @@ fun ProfileScreen(
     onNavigateToHistory: () -> Unit = {},
     onNavigateToSecurity: () -> Unit = {},
     onNavigateToHelp: () -> Unit = {},
+    onNavigateToSearch: () -> Unit = {},
     onNavigateToBandDetail: (String) -> Unit = {},
     onLogout: () -> Unit = {},
     viewModel: ProfileViewModel = hiltViewModel()
@@ -89,8 +90,7 @@ fun ProfileScreen(
     val userEmail by viewModel.userEmail.collectAsState()
     val profile by viewModel.profile.collectAsState()
     val followedBands by viewModel.followedBands.collectAsState()
-    val managedBand by viewModel.managedBand.collectAsState()
-    val matchingVacancies by viewModel.matchingVacancies.collectAsState()
+    val managedBand by viewModel.userBand.collectAsState()
     val playlists by viewModel.playlists.collectAsState()
     val history by viewModel.listeningHistory.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
@@ -100,7 +100,6 @@ fun ProfileScreen(
     val displayName = profile?.displayName ?: "Користувач"
     val initials = displayName.take(2).uppercase()
     val userGenres = profile?.musicGenres ?: emptyList()
-    var showMatchingVacancies by remember { mutableStateOf(false) }
 
     // Snackbar
     val snackbarHostState = remember { SnackbarHostState() }
@@ -151,7 +150,9 @@ fun ProfileScreen(
     }
 
     Scaffold(
+        modifier = modifier.fillMaxSize(), // Використовуємо модифікатор з MainScreen
         containerColor = DarkBg,
+        contentWindowInsets = WindowInsets(0.dp), // Це прибере "міні смугу"
         snackbarHost = {
             SnackbarHost(snackbarHostState) { data ->
                 Snackbar(
@@ -163,7 +164,7 @@ fun ProfileScreen(
             }
         }
     ) { paddingValues ->
-        Box(modifier = modifier.fillMaxSize().padding(paddingValues)) {
+        Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) { // Застосовуємо тільки внутрішній відступ
             if (isLoading) {
                 CircularProgressIndicator(color = NeonPurple, modifier = Modifier.align(Alignment.Center))
             } else {
@@ -176,7 +177,7 @@ fun ProfileScreen(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(top = 32.dp, bottom = 24.dp),
+                                .padding(top = 16.dp, bottom = 24.dp), // Зменшено відступ зверху
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Box(
@@ -256,57 +257,51 @@ fun ProfileScreen(
                         if (managedBand == null) {
                             NoBandActionsCard(
                                 instrument = profile?.instrument,
-                                vacancies = matchingVacancies,
-                                showVacancies = showMatchingVacancies,
-                                onToggleVacancies = {
-                                    showMatchingVacancies = !showMatchingVacancies
-                                    viewModel.loadMatchingVacancies()
-                                },
                                 onCreateBand = onNavigateToBandManager,
-                                onApply = { vacancyId -> viewModel.applyForVacancy(vacancyId) }
+                                onNavigateToSearch = onNavigateToSearch
                             )
                         } else {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 24.dp, vertical = 8.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(SurfaceDark)
-                                .border(1.dp, SurfaceVariantDark, RoundedCornerShape(16.dp))
-                                .clickable { onNavigateToBandManager() }
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 24.dp, vertical = 8.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(SurfaceDark)
+                                    .border(1.dp, SurfaceVariantDark, RoundedCornerShape(16.dp))
+                                    .clickable { onNavigateToBandManager() }
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .clip(CircleShape)
-                                        .background(NeonPurple.copy(alpha = 0.1f)),
-                                    contentAlignment = Alignment.Center
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                                 ) {
-                                    Icon(
-                                        Icons.Default.MusicNote, null,
-                                        tint = NeonPurple, modifier = Modifier.size(24.dp)
-                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .clip(CircleShape)
+                                            .background(NeonPurple.copy(alpha = 0.1f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Default.MusicNote, null,
+                                            tint = NeonPurple, modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            "Кабінет гурту",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = NeonPurple
+                                        )
+                                        Text(
+                                            "Керуй своїм гуртом",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = TextGray
+                                        )
+                                    }
+                                    Icon(Icons.Default.ChevronRight, null, tint = NeonPurple)
                                 }
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        "Кабінет гурту",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = NeonPurple
-                                    )
-                                    Text(
-                                        "Керуй своїм гуртом",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = TextGray
-                                    )
-                                }
-                                Icon(Icons.Default.ChevronRight, null, tint = NeonPurple)
                             }
-                        }
                         }
                         Spacer(modifier = Modifier.height(16.dp))
                     }
@@ -486,12 +481,11 @@ fun ProfileScreen(
 @Composable
 fun NoBandActionsCard(
     instrument: String?,
-    vacancies: List<VacancyDto>,
-    showVacancies: Boolean,
-    onToggleVacancies: () -> Unit,
     onCreateBand: () -> Unit,
-    onApply: (String) -> Unit
+    onNavigateToSearch: () -> Unit
 ) {
+    val context = LocalContext.current
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -503,42 +497,33 @@ fun NoBandActionsCard(
     ) {
         Text("Ви ще не в гурті", color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Text(
-            text = instrument?.takeIf { it.isNotBlank() }?.let { "Пошук вакансій для: $it" }
-                ?: "Додайте інструмент у профілі, щоб пошук був точнішим",
+            text = instrument?.takeIf { it.isNotBlank() }?.let { "Ваш інструмент: $it" }
+                ?: "Додайте інструмент у профілі, щоб гуртам було легше вас знайти",
             color = TextGray,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(top = 4.dp)
         )
         Spacer(modifier = Modifier.height(14.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button(onClick = onCreateBand, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = NeonPurple, contentColor = DarkBg)) {
+            Button(
+                onClick = onCreateBand,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = NeonPurple, contentColor = DarkBg)
+            ) {
                 Text("Створити гурт")
             }
-            OutlinedButton(onClick = onToggleVacancies, modifier = Modifier.weight(1f)) {
-                Text("Вступити")
-            }
-        }
-        if (showVacancies) {
-            Spacer(modifier = Modifier.height(12.dp))
-            if (vacancies.isEmpty()) {
-                Text("Підходящих вакансій поки немає", color = TextGray)
-            } else {
-                vacancies.take(5).forEach { vacancy ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Icon(Icons.Default.PersonSearch, null, tint = NeonPurple)
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(vacancy.instrument, color = Color.White, fontWeight = FontWeight.SemiBold)
-                            Text(vacancy.city ?: "Місто не вказано", color = TextGray, style = MaterialTheme.typography.bodySmall)
-                        }
-                        TextButton(onClick = { onApply(vacancy.id) }) {
-                            Text("Заявка")
-                        }
-                    }
-                }
+            OutlinedButton(
+                onClick = {
+                    android.widget.Toast.makeText(
+                        context,
+                        "Знайдіть гурт через пошук та перейдіть на його сторінку для відгуку",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                    onNavigateToSearch()
+                },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Знайти гурт")
             }
         }
     }

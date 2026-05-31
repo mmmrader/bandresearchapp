@@ -66,6 +66,11 @@ class BandManagerViewModel @Inject constructor(
 
     private val _applications = MutableStateFlow<List<ApplicationDto>>(emptyList())
     val applications: StateFlow<List<ApplicationDto>> = _applications.asStateFlow()
+    private val _chatMessages = MutableStateFlow<List<ChatMessageDto>>(emptyList())
+    val chatMessages: StateFlow<List<ChatMessageDto>> = _chatMessages.asStateFlow()
+
+    private val _candidateProfile = MutableStateFlow<ProfileDto?>(null)
+    val candidateProfile: StateFlow<ProfileDto?> = _candidateProfile.asStateFlow()
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
@@ -473,7 +478,42 @@ class BandManagerViewModel @Inject constructor(
             }
         }
     }
+    fun loadCandidateProfile(userId: String) {
+        viewModelScope.launch {
+            try {
+                _candidateProfile.value = supabaseClient.postgrest["profiles"]
+                    .select {
+                        filter {
+                            eq("id", userId)
+                        }
+                    }
+                    .decodeSingleOrNull<ProfileDto>()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
 
+    fun loadChat(candidateId: String) {
+        val myId = supabaseClient.auth.currentUserOrNull()?.id ?: return
+
+        viewModelScope.launch {
+            try {
+                val messages = supabaseClient.postgrest["chat_messages"]
+                    .select()
+                    .decodeList<ChatMessageDto>()
+                    .filter {
+                        (it.senderId == myId && it.recipientId == candidateId) ||
+                                (it.senderId == candidateId && it.recipientId == myId)
+                    }
+                    .sortedBy { it.createdAt }
+
+                _chatMessages.value = messages
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
     fun uploadTrack(context: Context, onSuccess: () -> Unit) {
         val bandId = _currentBand.value?.id ?: return
         val fileUri = _selectedFileUri.value ?: return

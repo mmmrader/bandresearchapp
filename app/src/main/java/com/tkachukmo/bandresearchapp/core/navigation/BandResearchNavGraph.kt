@@ -34,6 +34,9 @@ import com.tkachukmo.bandresearchapp.feature.profile.ui.SecurityScreen
 
 import com.tkachukmo.bandresearchapp.data.remote.dto.PlaylistDto
 
+import com.tkachukmo.bandresearchapp.core.messages.ui.ChatListScreen
+import com.tkachukmo.bandresearchapp.core.messages.ui.ChatDetailScreen
+
 // -------------------- ROUTES --------------------
 
 object Routes {
@@ -67,10 +70,20 @@ object Routes {
     const val SECURITY = "security"
     const val HELP = "help"
 
-    // Playlist detail — передаємо id і name через аргументи
+    // Playlist detail
     const val PLAYLIST_DETAIL_BASE = "playlist_detail"
     const val PLAYLIST_DETAIL = "playlist_detail/{playlistId}/{playlistName}/{isPublic}"
+
+    // Чати
+    const val CHAT_LIST = "chat_list"
+    const val CHAT_DETAIL_BASE = "chat_detail"
+    // chatPartnerId — UUID співрозмовника; chatName — URL-encoded ім'я (опціонально)
+    const val CHAT_DETAIL = "chat_detail/{chatPartnerId}?chatName={chatName}"
 }
+
+// Хелпер для безпечного URL-encode імені чату
+private fun encodeChatName(name: String): String =
+    java.net.URLEncoder.encode(name, "UTF-8")
 
 // -------------------- NAV GRAPH --------------------
 
@@ -81,22 +94,24 @@ fun BandResearchNavGraph(
     navController: NavHostController = rememberNavController()
 ) {
 
+    // Загальний лямбда для переходу до чату — використовується і з BandManager, і з ChatList
+    val navigateToChat: (partnerId: String, chatName: String) -> Unit = { partnerId, chatName ->
+        val encoded = encodeChatName(chatName)
+        navController.navigate("${Routes.CHAT_DETAIL_BASE}/$partnerId?chatName=$encoded")
+    }
+
     NavHost(
         navController = navController,
         startDestination = startDestination,
         modifier = modifier
     ) {
 
-        // -------------------- LOGIN --------------------
+        // -------------------- AUTH --------------------
 
         composable(Routes.LOGIN) {
             LoginScreen(
-                onNavigateToRegister = {
-                    navController.navigate(Routes.REGISTER)
-                },
-                onNavigateToForgotPassword = {
-                    navController.navigate(Routes.FORGOT_PASSWORD)
-                },
+                onNavigateToRegister = { navController.navigate(Routes.REGISTER) },
+                onNavigateToForgotPassword = { navController.navigate(Routes.FORGOT_PASSWORD) },
                 onLoginSuccess = {
                     navController.navigate(Routes.MAIN_BASE) {
                         popUpTo(Routes.LOGIN) { inclusive = true }
@@ -104,8 +119,6 @@ fun BandResearchNavGraph(
                 }
             )
         }
-
-        // -------------------- REGISTER --------------------
 
         composable(Routes.REGISTER) {
             RegisterScreen(
@@ -118,15 +131,11 @@ fun BandResearchNavGraph(
             )
         }
 
-        // -------------------- FORGOT PASSWORD --------------------
-
         composable(Routes.FORGOT_PASSWORD) {
-            ForgotPasswordScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
+            ForgotPasswordScreen(onNavigateBack = { navController.popBackStack() })
         }
 
-        // -------------------- MAIN SCREEN --------------------
+        // -------------------- MAIN --------------------
 
         composable(
             route = Routes.MAIN,
@@ -137,12 +146,10 @@ fun BandResearchNavGraph(
                 }
             )
         ) { backStackEntry ->
-
             val tabIndex = backStackEntry.arguments?.getInt("tabIndex") ?: 0
 
             MainScreen(
                 initialTab = tabIndex,
-
                 onNavigateToBandDetail = { bandId ->
                     navController.navigate("${Routes.BAND_DETAIL_BASE}/$bandId")
                 },
@@ -154,6 +161,9 @@ fun BandResearchNavGraph(
                 },
                 onNavigateToPlayer = { trackId ->
                     navController.navigate("${Routes.PLAYER_BASE}/$trackId")
+                },
+                onNavigateToChatList = {
+                    navController.navigate(Routes.CHAT_LIST)
                 },
                 onLogout = {
                     navController.navigate(Routes.LOGIN) {
@@ -171,48 +181,34 @@ fun BandResearchNavGraph(
         // -------------------- BAND DETAIL --------------------
 
         composable(Routes.BAND_DETAIL) { backStackEntry ->
-
             val bandId = backStackEntry.arguments?.getString("bandId") ?: "1"
-
             BandDetailScreen(
                 bandId = bandId,
-
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-
+                onNavigateBack = { navController.popBackStack() },
                 onPlayTrack = { track ->
                     navController.navigate("${Routes.PLAYER_BASE}/${track.id}")
                 },
-
                 onNavigateToPlayer = { trackId ->
                     navController.navigate("${Routes.PLAYER_BASE}/$trackId")
                 },
-
                 onNavigateToTab = { tabIndex ->
                     navController.navigate("${Routes.MAIN_BASE}?tabIndex=$tabIndex") {
                         popUpTo(Routes.MAIN_BASE) { inclusive = true }
                     }
-                }
+                },
+                onNavigateToChat = navigateToChat
             )
         }
+
         // -------------------- PLAYER --------------------
 
         composable(
             route = Routes.PLAYER,
-            deepLinks = listOf(
-                navDeepLink { uriPattern = "bandmatch://player" }
-            ),
-            enterTransition = {
-                slideInVertically(initialOffsetY = { it }, animationSpec = tween(400))
-            },
-            exitTransition = {
-                slideOutVertically(targetOffsetY = { it }, animationSpec = tween(400))
-            }
+            deepLinks = listOf(navDeepLink { uriPattern = "bandmatch://player" }),
+            enterTransition = { slideInVertically(initialOffsetY = { it }, animationSpec = tween(400)) },
+            exitTransition = { slideOutVertically(targetOffsetY = { it }, animationSpec = tween(400)) }
         ) { backStackEntry ->
-
             val trackId = backStackEntry.arguments?.getString("trackId") ?: "1"
-
             PlayerScreen(
                 trackId = trackId,
                 onNavigateBack = {
@@ -229,9 +225,7 @@ fun BandResearchNavGraph(
         // -------------------- NOTIFICATIONS --------------------
 
         composable(Routes.NOTIFICATIONS) {
-            NotificationsScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
+            NotificationsScreen(onNavigateBack = { navController.popBackStack() })
         }
 
         // -------------------- PROFILE --------------------
@@ -258,17 +252,13 @@ fun BandResearchNavGraph(
         // -------------------- PROFILE SUB SCREENS --------------------
 
         composable(Routes.EDIT_PROFILE) {
-            EditProfileScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
+            EditProfileScreen(onNavigateBack = { navController.popBackStack() })
         }
 
-        // Список плейлистів
         composable(Routes.PLAYLISTS) {
             PlaylistsScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onOpenPlaylist = { playlist ->
-                    // Кодуємо ім'я плейлиста (може містити пробіли)
                     val encodedName = java.net.URLEncoder.encode(playlist.name, "UTF-8")
                     navController.navigate(
                         "${Routes.PLAYLIST_DETAIL_BASE}/${playlist.id}/$encodedName/${playlist.isPublic}"
@@ -277,7 +267,6 @@ fun BandResearchNavGraph(
             )
         }
 
-        // Деталі плейлиста (треки)
         composable(
             route = Routes.PLAYLIST_DETAIL,
             arguments = listOf(
@@ -286,21 +275,13 @@ fun BandResearchNavGraph(
                 navArgument("isPublic") { type = NavType.BoolType; defaultValue = false }
             )
         ) { backStackEntry ->
-            val playlistId = backStackEntry.arguments?.getString("playlistId") ?: return@composable
-            val encodedName = backStackEntry.arguments?.getString("playlistName") ?: ""
+            val playlistId   = backStackEntry.arguments?.getString("playlistId") ?: return@composable
+            val encodedName  = backStackEntry.arguments?.getString("playlistName") ?: ""
             val playlistName = java.net.URLDecoder.decode(encodedName, "UTF-8")
-            val isPublic = backStackEntry.arguments?.getBoolean("isPublic") ?: false
-
-            // Відновлюємо PlaylistDto з аргументів навігації
-            val playlist = PlaylistDto(
-                id = playlistId,
-                userId = "",        // не потрібен для відображення треків
-                name = playlistName,
-                isPublic = isPublic
-            )
+            val isPublic     = backStackEntry.arguments?.getBoolean("isPublic") ?: false
 
             PlaylistDetailScreen(
-                playlist = playlist,
+                playlist = PlaylistDto(id = playlistId, userId = "", name = playlistName, isPublic = isPublic),
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToPlayer = { trackId ->
                     navController.navigate("${Routes.PLAYER_BASE}/$trackId")
@@ -310,20 +291,19 @@ fun BandResearchNavGraph(
 
         composable(Routes.HISTORY) {
             HistoryScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToPlayer = { trackId ->
+                    navController.navigate("${Routes.PLAYER_BASE}/$trackId")
+                }
             )
         }
 
         composable(Routes.SECURITY) {
-            SecurityScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
+            SecurityScreen(onNavigateBack = { navController.popBackStack() })
         }
 
         composable(Routes.HELP) {
-            HelpScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
+            HelpScreen(onNavigateBack = { navController.popBackStack() })
         }
 
         // -------------------- BAND MANAGER --------------------
@@ -335,7 +315,45 @@ fun BandResearchNavGraph(
                     navController.navigate("${Routes.MAIN_BASE}?tabIndex=$tabIndex") {
                         popUpTo(Routes.MAIN_BASE) { inclusive = true }
                     }
+                },
+                // Адмін натискає "Написати" -> відкривається ChatDetailScreen з цим кандидатом
+                onNavigateToChat = navigateToChat
+            )
+        }
+
+        // -------------------- ЧАТИ --------------------
+
+        composable(Routes.CHAT_LIST) {
+            ChatListScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToChat = { partnerId ->
+                    // З ChatList ім'я береться з профілю в ChatDetailScreen автоматично
+                    navController.navigate("${Routes.CHAT_DETAIL_BASE}/$partnerId")
                 }
+            )
+        }
+
+        composable(
+            route = Routes.CHAT_DETAIL,
+            arguments = listOf(
+                navArgument("chatPartnerId") { type = NavType.StringType },
+                navArgument("chatName") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                    nullable = true
+                }
+            )
+        ) { backStackEntry ->
+            val partnerId   = backStackEntry.arguments?.getString("chatPartnerId") ?: ""
+            val encodedName = backStackEntry.arguments?.getString("chatName") ?: ""
+            val chatName    = try {
+                java.net.URLDecoder.decode(encodedName, "UTF-8")
+            } catch (e: Exception) { encodedName }
+
+            ChatDetailScreen(
+                chatPartnerId = partnerId,
+                chatName      = chatName,
+                onNavigateBack = { navController.popBackStack() }
             )
         }
     }

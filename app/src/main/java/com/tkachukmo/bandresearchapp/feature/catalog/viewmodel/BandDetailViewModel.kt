@@ -20,6 +20,9 @@ class BandDetailViewModel @Inject constructor(
     val audioController: AudioController
 ) : ViewModel() {
 
+    private val _userApplications = MutableStateFlow<List<ApplicationDto>>(emptyList())
+    val userApplications: StateFlow<List<ApplicationDto>> = _userApplications.asStateFlow()
+
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -44,7 +47,6 @@ class BandDetailViewModel @Inject constructor(
     private val _playlists = MutableStateFlow<List<PlaylistDto>>(emptyList())
     val playlists: StateFlow<List<PlaylistDto>> = _playlists.asStateFlow()
 
-    // РќРћР’Р•: РЎС‚Р°РЅ РґР»СЏ РІР°РєР°РЅСЃС–Р№
     private val _vacancies = MutableStateFlow<List<VacancyDto>>(emptyList())
     val vacancies: StateFlow<List<VacancyDto>> = _vacancies.asStateFlow()
 
@@ -59,51 +61,80 @@ class BandDetailViewModel @Inject constructor(
         _successMessage.value = null
     }
 
+    // ==========================================
+    // ЗАЯВКИ КОРИСТУВАЧА
+    // ==========================================
+
+    fun loadUserApplications() {
+        viewModelScope.launch {
+            try {
+                val userId = supabaseClient.auth.currentUserOrNull()?.id ?: return@launch
+                _userApplications.value = supabaseClient.postgrest["applications"]
+                    .select { filter { eq("user_id", userId) } }
+                    .decodeList<ApplicationDto>()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    // ==========================================
+    // ЗАВАНТАЖЕННЯ ДЕТАЛЕЙ ГУРТУ
+    // ==========================================
+
     fun loadBandDetails(bandId: String) {
         viewModelScope.launch {
             _isLoading.value = true
             clearMessages()
+
             try {
-                val currentBand = supabaseClient.postgrest["bands"].select { filter { eq("id", bandId) } }.decodeSingleOrNull<BandDto>()
+                val currentBand = supabaseClient.postgrest["bands"]
+                    .select { filter { eq("id", bandId) } }
+                    .decodeSingleOrNull<BandDto>()
+
                 _band.value = currentBand
 
                 if (currentBand != null) {
-                    val bandTracks = supabaseClient.postgrest["tracks"].select { filter { eq("band_id", bandId) } }.decodeList<TrackDto>()
+
+                    val bandTracks = supabaseClient.postgrest["tracks"]
+                        .select { filter { eq("band_id", bandId) } }
+                        .decodeList<TrackDto>()
+
                     _tracks.value = try {
                         bandTracks.withUniqueListenerCounts()
                     } catch (_: Throwable) {
                         bandTracks
                     }
+
                     _releases.value = try {
-                        supabaseClient.postgrest["releases"].select { filter { eq("band_id", bandId) } }.decodeList<ReleaseDto>()
-                    } catch (_: Throwable) {
-                        emptyList()
-                    }
+                        supabaseClient.postgrest["releases"]
+                            .select { filter { eq("band_id", bandId) } }
+                            .decodeList<ReleaseDto>()
+                    } catch (_: Throwable) { emptyList() }
+
                     _videos.value = try {
-                        supabaseClient.postgrest["videos"].select { filter { eq("band_id", bandId) } }.decodeList<VideoDto>()
-                    } catch (_: Throwable) {
-                        emptyList()
-                    }
+                        supabaseClient.postgrest["videos"]
+                            .select { filter { eq("band_id", bandId) } }
+                            .decodeList<VideoDto>()
+                    } catch (_: Throwable) { emptyList() }
+
                     _events.value = try {
                         supabaseClient.postgrest["band_events"]
                             .select { filter { eq("band_id", bandId) } }
                             .decodeList<BandEventDto>()
                             .sortedByDescending { it.createdAt ?: it.eventDate ?: "" }
-                    } catch (_: Throwable) {
-                        emptyList()
-                    }
+                    } catch (_: Throwable) { emptyList() }
 
-                    // Р—Р°РІР°РЅС‚Р°Р¶СѓС”РјРѕ Р°РєС‚РёРІРЅС– РІР°РєР°РЅСЃС–С—
                     _vacancies.value = try {
                         supabaseClient.postgrest["vacancies"]
                             .select { filter { eq("band_id", bandId); eq("is_active", true) } }
                             .decodeList<VacancyDto>()
-                    } catch (_: Throwable) {
-                        emptyList()
-                    }
+                    } catch (_: Throwable) { emptyList() }
 
+                    loadUserApplications()
                     checkIfFollowing(bandId)
                 }
+
             } catch (e: Exception) {
                 _errorMessage.value = "Не вдалося завантажити сторінку гурту. Спробуйте ще раз."
             } finally {
@@ -112,10 +143,16 @@ class BandDetailViewModel @Inject constructor(
         }
     }
 
+    // ==========================================
+    // ПІДПИСКА
+    // ==========================================
+
     private suspend fun checkIfFollowing(bandId: String) {
         val userId = supabaseClient.auth.currentUserOrNull()?.id ?: return
         try {
-            val follows = supabaseClient.postgrest["follows"].select { filter { eq("user_id", userId); eq("band_id", bandId) } }.decodeList<FollowDto>()
+            val follows = supabaseClient.postgrest["follows"]
+                .select { filter { eq("user_id", userId); eq("band_id", bandId) } }
+                .decodeList<FollowDto>()
             _isFollowing.value = follows.isNotEmpty()
         } catch (e: Exception) { e.printStackTrace() }
     }
@@ -134,22 +171,34 @@ class BandDetailViewModel @Inject constructor(
             }
             try {
                 if (_isFollowing.value) {
-                    supabaseClient.postgrest["follows"].delete { filter { eq("user_id", userId); eq("band_id", bandId) } }
+                    supabaseClient.postgrest["follows"].delete {
+                        filter { eq("user_id", userId); eq("band_id", bandId) }
+                    }
                     _isFollowing.value = false
-                    _band.value = _band.value?.copy(followersCount = maxOf(0, (_band.value?.followersCount ?: 0) - 1))
+                    _band.value = _band.value?.copy(
+                        followersCount = maxOf(0, (_band.value?.followersCount ?: 0) - 1)
+                    )
                 } else {
                     supabaseClient.postgrest["follows"].insert(FollowDto(userId, bandId))
                     _isFollowing.value = true
-                    _band.value = _band.value?.copy(followersCount = (_band.value?.followersCount ?: 0) + 1)
+                    _band.value = _band.value?.copy(
+                        followersCount = (_band.value?.followersCount ?: 0) + 1
+                    )
                 }
                 _band.value?.let { currentBand ->
-                    supabaseClient.postgrest["bands"].update(mapOf("followers_count" to currentBand.followersCount)) { filter { eq("id", currentBand.id) } }
+                    supabaseClient.postgrest["bands"].update(
+                        mapOf("followers_count" to currentBand.followersCount)
+                    ) { filter { eq("id", currentBand.id) } }
                 }
             } catch (e: Exception) {
                 _errorMessage.value = "Не вдалося змінити підписку. Перевірте інтернет і спробуйте ще раз."
             }
         }
     }
+
+    // ==========================================
+    // ПЛЕЙЛИСТИ
+    // ==========================================
 
     fun loadUserPlaylists() {
         viewModelScope.launch {
@@ -182,9 +231,13 @@ class BandDetailViewModel @Inject constructor(
 
                 val nextPosition = (currentTracks.maxOfOrNull { it.position } ?: 0) + 1
 
-                val newTrackDto = PlaylistTrackInsertDto(playlistId = playlistId, trackId = trackId, position = nextPosition)
-                supabaseClient.postgrest["playlist_tracks"].insert(newTrackDto)
-
+                supabaseClient.postgrest["playlist_tracks"].insert(
+                    PlaylistTrackInsertDto(
+                        playlistId = playlistId,
+                        trackId = trackId,
+                        position = nextPosition
+                    )
+                )
                 _successMessage.value = "Трек додано до плейліста."
             } catch (e: Exception) {
                 _errorMessage.value = "Не вдалося додати трек до плейліста."
@@ -192,7 +245,10 @@ class BandDetailViewModel @Inject constructor(
         }
     }
 
-    // РќРћР’Р•: Р¤СѓРЅРєС†С–СЏ РґР»СЏ РІС–РґРїСЂР°РІРєРё Р·Р°СЏРІРєРё РЅР° РІР°РєР°РЅСЃС–СЋ
+    // ==========================================
+    // ЗАЯВКА НА ВАКАНСІЮ
+    // ==========================================
+
     fun applyForVacancy(vacancyId: String, message: String) {
         viewModelScope.launch {
             val userId = supabaseClient.auth.currentUserOrNull()?.id
@@ -201,7 +257,6 @@ class BandDetailViewModel @Inject constructor(
                 return@launch
             }
             try {
-                // РџРµСЂРµРІС–СЂСЏС”РјРѕ, С‡Рё СЋР·РµСЂ РІР¶Рµ РЅРµ РїРѕРґР°РІ Р·Р°СЏРІРєСѓ РЅР° С†СЋ РІР°РєР°РЅСЃС–СЋ
                 val existingApp = supabaseClient.postgrest["applications"]
                     .select { filter { eq("vacancy_id", vacancyId); eq("user_id", userId) } }
                     .decodeList<ApplicationDto>()
@@ -211,16 +266,18 @@ class BandDetailViewModel @Inject constructor(
                     return@launch
                 }
 
-                val newApp = ApplicationInsertDto(vacancyId = vacancyId, userId = userId, message = message)
-                supabaseClient.postgrest["applications"].insert(newApp)
+                supabaseClient.postgrest["applications"].insert(
+                    ApplicationInsertDto(vacancyId = vacancyId, userId = userId, message = message)
+                )
 
+                // Сповіщення адміну гурту
                 _band.value?.managerId?.let { managerId ->
                     supabaseClient.postgrest["notifications"].insert(
                         NotificationInsertDto(
                             userId = managerId,
-                            type = "new_application",
-                            title = "Новий кандидат",
-                            body = "Є новий відгук на вакансію у ${_band.value?.name ?: "гурті"}"
+                            type   = "new_application",
+                            title  = "Новий кандидат",
+                            body   = "Є новий відгук на вакансію у ${_band.value?.name ?: "гурті"}"
                         )
                     )
                 }
@@ -232,11 +289,15 @@ class BandDetailViewModel @Inject constructor(
         }
     }
 
+    // ==========================================
+    // ДОПОМІЖНЕ: unique listeners з listen_history
+    // ==========================================
+
     private suspend fun List<TrackDto>.withUniqueListenerCounts(): List<TrackDto> {
         if (isEmpty()) return emptyList()
 
         val trackIds = map { it.id }
-        val history = supabaseClient.postgrest["history"]
+        val history = supabaseClient.postgrest["listen_history"]
             .select { filter { isIn("track_id", trackIds) } }
             .decodeList<HistoryDto>()
 
@@ -249,4 +310,3 @@ class BandDetailViewModel @Inject constructor(
         }
     }
 }
-

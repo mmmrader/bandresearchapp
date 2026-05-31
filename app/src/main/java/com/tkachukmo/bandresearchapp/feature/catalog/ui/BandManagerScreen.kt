@@ -3,6 +3,9 @@ package com.tkachukmo.bandresearchapp.feature.catalog.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import com.tkachukmo.bandresearchapp.data.remote.dto.ChatMessageDto
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -30,6 +33,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import com.tkachukmo.bandresearchapp.data.remote.dto.BandDto
@@ -48,6 +53,7 @@ import java.util.Calendar
 fun BandManagerScreen(
     onNavigateBack: () -> Unit,
     onNavigateToTab: (Int) -> Unit = {},
+    onNavigateToChat: (partnerId: String, chatName: String) -> Unit = { _, _ -> },
     viewModel: BandManagerViewModel = hiltViewModel()
 ) {
     val isLoading by viewModel.isLoading.collectAsState()
@@ -99,7 +105,7 @@ fun BandManagerScreen(
                 isUploadingTrack -> UploadTrackForm(viewModel, releases, { viewModel.clearUploadForm(); isUploadingTrack = false }, { viewModel.uploadTrack(context) { isUploadingTrack = false } })
                 isAddingVideo -> AddVideoForm(viewModel, { isAddingVideo = false }, { isAddingVideo = false })
                 isEditingProfile && currentBand != null -> EditBandProfile(currentBand!!, viewModel) { isEditingProfile = false }
-                currentBand != null -> BandDashboard(currentBand!!, tracks, videos, releases, events, vacancies, applications, viewModel, { isEditingProfile = true }, { isUploadingTrack = true }, { isAddingVideo = true }, { isCreatingRelease = true })
+                currentBand != null -> BandDashboard(currentBand!!, tracks, videos, releases, events, vacancies, applications, viewModel, { isEditingProfile = true }, { isUploadingTrack = true }, { isAddingVideo = true }, { isCreatingRelease = true }, onNavigateToChat = onNavigateToChat)
                 isCreatingBand -> CreateBandForm(viewModel) { isCreatingBand = false }
                 else -> EmptyBandState { isCreatingBand = true }
             }
@@ -136,7 +142,8 @@ fun BandDashboard(
     onEditClick: () -> Unit,
     onAddTrackClick: () -> Unit,
     onAddVideoClick: () -> Unit,
-    onAddReleaseClick: () -> Unit
+    onAddReleaseClick: () -> Unit,
+    onNavigateToChat: (String, String) -> Unit
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
@@ -147,51 +154,148 @@ fun BandDashboard(
     Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
         Box(modifier = Modifier.fillMaxWidth().height(300.dp)) {
             Box(modifier = Modifier.fillMaxSize().clickable { coverPicker.launch("image/*") }) {
-                if (band.coverUrl != null) AsyncImage(model = band.coverUrl, contentDescription = "Cover", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                else Box(modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF6750A4), Color(0xFF21005D)))))
-                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.CameraAlt, null, tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(32.dp))
+                if (band.coverUrl != null) AsyncImage(
+                    model = band.coverUrl,
+                    contentDescription = "Cover",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                else Box(
+                    modifier = Modifier.fillMaxSize().background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color(0xFF6750A4),
+                                Color(0xFF21005D)
+                            )
+                        )
+                    )
+                )
+                Box(
+                    modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.CameraAlt,
+                        null,
+                        tint = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.size(32.dp)
+                    )
                 }
             }
             Box(
-                modifier = Modifier.align(Alignment.BottomCenter).offset(y = (50).dp).size(100.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface).clickable { avatarPicker.launch("image/*") },
+                modifier = Modifier.align(Alignment.BottomCenter).offset(y = (50).dp).size(100.dp)
+                    .clip(CircleShape).background(MaterialTheme.colorScheme.surface)
+                    .clickable { avatarPicker.launch("image/*") },
                 contentAlignment = Alignment.Center
             ) {
-                if (band.avatarUrl != null) AsyncImage(model = band.avatarUrl, contentDescription = "Avatar", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                else Text(band.name.take(2).uppercase(), fontSize = 32.sp, fontWeight = FontWeight.Bold)
-                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.PhotoCamera, null, tint = Color.White, modifier = Modifier.size(28.dp))
+                if (band.avatarUrl != null) AsyncImage(
+                    model = band.avatarUrl,
+                    contentDescription = "Avatar",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                else Text(
+                    band.name.take(2).uppercase(),
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Box(
+                    modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.PhotoCamera,
+                        null,
+                        tint = Color.White,
+                        modifier = Modifier.size(28.dp)
+                    )
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(60.dp))
 
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text = band.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                IconButton(onClick = onEditClick) { Icon(Icons.Default.Edit, null, tint = MaterialTheme.colorScheme.primary) }
+                Text(
+                    text = band.name,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                IconButton(onClick = onEditClick) {
+                    Icon(
+                        Icons.Default.Edit,
+                        null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
-            band.genres.takeIf { it.isNotEmpty() }?.let { Text(text = it.joinToString(", "), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            band.genres.takeIf { it.isNotEmpty() }?.let {
+                Text(
+                    text = it.joinToString(", "),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             if (!band.description.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(text = band.description, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 16.dp))
+                Text(
+                    text = band.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
             }
             Spacer(modifier = Modifier.height(24.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                DashboardStatCard(Modifier.weight(1f), Icons.Default.People, band.followersCount.toString(), "Підписників", MaterialTheme.colorScheme.secondaryContainer)
-                DashboardStatCard(Modifier.weight(1f), Icons.Default.PlayArrow, band.playsCount.toString(), "Прослуховувань", MaterialTheme.colorScheme.tertiaryContainer)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                DashboardStatCard(
+                    Modifier.weight(1f),
+                    Icons.Default.People,
+                    band.followersCount.toString(),
+                    "Підписників",
+                    MaterialTheme.colorScheme.secondaryContainer
+                )
+                DashboardStatCard(
+                    Modifier.weight(1f),
+                    Icons.Default.PlayArrow,
+                    band.playsCount.toString(),
+                    "Прослуховувань",
+                    MaterialTheme.colorScheme.tertiaryContainer
+                )
             }
         }
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Альбоми / EP / Сингли", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            IconButton(onClick = onAddReleaseClick) { Icon(Icons.Default.LibraryAdd, contentDescription = "Створити альбом", tint = MaterialTheme.colorScheme.primary) }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Альбоми / EP / Сингли",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            IconButton(onClick = onAddReleaseClick) {
+                Icon(
+                    Icons.Default.LibraryAdd,
+                    contentDescription = "Створити альбом",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
         }
         Spacer(modifier = Modifier.height(8.dp))
-        if (releases.isEmpty()) Text("Створіть свій перший реліз перед завантаженням треків", modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (releases.isEmpty()) Text(
+            "Створіть свій перший реліз перед завантаженням треків",
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         else {
             releases.forEach { release ->
                 ReleaseItem(release)
@@ -201,25 +305,64 @@ fun BandDashboard(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Окремі треки", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            IconButton(onClick = onAddTrackClick) { Icon(Icons.Default.AddCircle, contentDescription = "Додати трек", tint = MaterialTheme.colorScheme.primary) }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Окремі треки",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            IconButton(onClick = onAddTrackClick) {
+                Icon(
+                    Icons.Default.AddCircle,
+                    contentDescription = "Додати трек",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
         }
         Spacer(modifier = Modifier.height(8.dp))
-        if (tracks.isEmpty()) Text("Немає треків", modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (tracks.isEmpty()) Text(
+            "Немає треків",
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         else tracks.forEach { track ->
-            TrackItem(track, { viewModel.playTrack(track, tracks) }, { viewModel.deleteTrack(track.id) })
+            TrackItem(
+                track,
+                { viewModel.playTrack(track, tracks) },
+                { viewModel.deleteTrack(track.id) })
             Spacer(modifier = Modifier.height(8.dp))
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Ваші відео", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            IconButton(onClick = onAddVideoClick) { Icon(Icons.Default.VideoCall, contentDescription = "Додати відео", tint = MaterialTheme.colorScheme.primary) }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Ваші відео",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            IconButton(onClick = onAddVideoClick) {
+                Icon(
+                    Icons.Default.VideoCall,
+                    contentDescription = "Додати відео",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
         }
         Spacer(modifier = Modifier.height(8.dp))
-        if (videos.isEmpty()) Text("Немає доданих відео", modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (videos.isEmpty()) Text(
+            "Немає доданих відео",
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         else videos.forEach { video ->
             VideoItem(video) { viewModel.deleteVideo(video.id) }
             Spacer(modifier = Modifier.height(8.dp))
@@ -229,7 +372,18 @@ fun BandDashboard(
         BandEventsManagerSection(
             events = events,
             onCreateEvent = { title, desc, type, date, venue, city, smart, spotify, apple, youtube ->
-                viewModel.createManualEvent(title, desc, type, date, venue, city, smart, spotify, apple, youtube) {}
+                viewModel.createManualEvent(
+                    title,
+                    desc,
+                    type,
+                    date,
+                    venue,
+                    city,
+                    smart,
+                    spotify,
+                    apple,
+                    youtube
+                ) {}
             }
         )
 
@@ -237,11 +391,13 @@ fun BandDashboard(
         VacanciesManagerSection(
             vacancies = vacancies,
             applications = applications,
+            onNavigateToChat = onNavigateToChat,
+            viewModel = viewModel,
             onCreateVacancy = viewModel::createVacancy,
             onDeleteVacancy = viewModel::deleteVacancy,
-            onAccept = { viewModel.updateApplicationStatus(it, "accepted") },
-            onReject = { viewModel.updateApplicationStatus(it, "rejected") },
-            onMessage = viewModel::sendMessageToCandidate
+            onAccept = { app -> viewModel.updateApplicationStatus(app, "accepted") }, // <--- ДОДАТИ ЦЕ
+            onReject = { app -> viewModel.updateApplicationStatus(app, "rejected") }, // <--- ДОДАТИ ЦЕ
+            onMessage = { app, msg -> viewModel.sendMessageToCandidate(app, msg) }    // <--- ДОДАТИ ЦЕ
         )
 
         Spacer(modifier = Modifier.height(100.dp))
@@ -347,8 +503,10 @@ fun VacanciesManagerSection(
     applications: List<ApplicationDto>,
     onCreateVacancy: (String, String, String) -> Unit,
     onDeleteVacancy: (String) -> Unit,
+    viewModel: BandManagerViewModel,
     onAccept: (ApplicationDto) -> Unit,
     onReject: (ApplicationDto) -> Unit,
+    onNavigateToChat: (String, String) -> Unit,
     onMessage: (ApplicationDto, String) -> Unit
 ) {
     var showForm by remember { mutableStateOf(false) }
@@ -399,10 +557,11 @@ fun VacanciesManagerSection(
             applications.forEach { app ->
                 ApplicationManagerItem(
                     application = app,
+                    onNavigateToChat = onNavigateToChat,
                     vacancy = vacancies.find { it.id == app.vacancyId },
-                    onAccept = { onAccept(app) },
-                    onReject = { onReject(app) },
-                    onMessage = { onMessage(app, it) }
+                    viewModel = viewModel, // <--- ПЕРЕДАЄМО VIEWMODEL
+                    onAccept = { viewModel.updateApplicationStatus(app, "accepted") },
+                    onReject = { viewModel.updateApplicationStatus(app, "rejected") }
                 )
             }
         }
@@ -430,40 +589,75 @@ fun VacancyManagerItem(vacancy: VacancyDto, onDelete: (String) -> Unit) {
 fun ApplicationManagerItem(
     application: ApplicationDto,
     vacancy: VacancyDto?,
+    viewModel: BandManagerViewModel,
     onAccept: () -> Unit,
     onReject: () -> Unit,
-    onMessage: (String) -> Unit
+    onNavigateToChat: (partnerId: String, chatName: String) -> Unit = { _, _ -> }
 ) {
-    var showMessage by remember { mutableStateOf(false) }
-    var text by remember { mutableStateOf("") }
+    var showProfile by remember { mutableStateOf(false) }
+    val candidateProfile by viewModel.candidateProfile.collectAsState()
 
-    if (showMessage) {
+    // Вікно профілю кандидата
+    if (showProfile && candidateProfile != null) {
         AlertDialog(
-            onDismissRequest = { showMessage = false },
-            title = { Text("Повідомлення кандидату") },
+            onDismissRequest = { showProfile = false },
+            title = { Text("Профіль кандидата") },
             text = {
-                OutlinedTextField(text, { text = it }, label = { Text("Текст") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+                Column {
+                    Text("Ім'я: ${candidateProfile?.displayName ?: "Не вказано"}", fontWeight = FontWeight.Bold)
+                    Text("Інструмент: ${candidateProfile?.instrument ?: "Не вказано"}")
+                    Text("Досвід: ${candidateProfile?.experience ?: "Не вказано"}")
+                    Text("Місто: ${candidateProfile?.location ?: "Не вказано"}")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Про себе: ${candidateProfile?.bio ?: "Немає інформації"}", style = MaterialTheme.typography.bodySmall)
+                }
             },
-            confirmButton = {
-                Button(onClick = { onMessage(text); text = ""; showMessage = false }, enabled = text.isNotBlank()) { Text("Надіслати") }
-            },
-            dismissButton = { TextButton(onClick = { showMessage = false }) { Text("Скасувати") } }
+            confirmButton = { TextButton(onClick = { showProfile = false }) { Text("Закрити") } }
         )
     }
 
-    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text("Кандидат: ${application.userId.take(8)}", fontWeight = FontWeight.Bold)
-            Text("Вакансія: ${vacancy?.instrument ?: application.vacancyId}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "Вакансія: ${vacancy?.instrument ?: application.vacancyId}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
             application.message?.takeIf { it.isNotBlank() }?.let {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(it)
             }
             Spacer(modifier = Modifier.height(10.dp))
+
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { showMessage = true }) { Text("Написати") }
-                OutlinedButton(onClick = onReject) { Text("Відхилити") }
-                Button(onClick = onAccept) { Text("Прийняти") }
+                if (application.status == "accepted") {
+                    // Прийнята заявка — показуємо тільки "Написати"
+                    Button(
+                        onClick = {
+                            // Просто передаємо звичайний текст, NavGraph сам його закодує
+                            onNavigateToChat(application.userId, "Кандидат: ${application.userId.take(8)}")
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Написати")
+                    }
+                } else {
+                    // Pending — Профіль / Відхилити / Прийняти
+                    OutlinedButton(onClick = {
+                        viewModel.loadCandidateProfile(application.userId)
+                        showProfile = true
+                    }) { Text("Профіль") }
+
+                    OutlinedButton(onClick = onReject) { Text("Відхилити") }
+                    Button(onClick = onAccept) { Text("Прийняти") }
+                }
             }
         }
     }

@@ -5,7 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.tkachukmo.bandresearchapp.core.player.AudioController
 import com.tkachukmo.bandresearchapp.data.remote.BandRepository
 import com.tkachukmo.bandresearchapp.data.remote.dto.HistoryDto
-import com.tkachukmo.bandresearchapp.data.remote.dto.HistoryUpsertDto
+import com.tkachukmo.bandresearchapp.data.remote.dto.HistoryInsertDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.PlaylistDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.PlaylistInsertDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.PlaylistTrackDto
@@ -16,16 +16,13 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
 import javax.inject.Inject
 
 @HiltViewModel
@@ -60,7 +57,7 @@ class PlayerViewModel @Inject constructor(
 
     private val _upcomingTracks = MutableStateFlow<List<TrackDto>>(emptyList())
     val upcomingTracks: StateFlow<List<TrackDto>> = _upcomingTracks.asStateFlow()
-    // Плейлисти користувача
+
     private val _playlists = MutableStateFlow<List<PlaylistDto>>(emptyList())
     val playlists: StateFlow<List<PlaylistDto>> = _playlists.asStateFlow()
 
@@ -85,31 +82,25 @@ class PlayerViewModel @Inject constructor(
                     _uniqueListenersCount.value = currentTrack.playsCount
                     try {
                         val band = bandRepository.getBandById(currentTrack.bandId)
-                        // Якщо bandId порожній (трек з плейліста) — залишаємо поточне значення
                         if (currentTrack.bandId.isNotBlank()) {
                             _bandName.value = band?.name ?: "Невідомий виконавець"
                         }
                         checkIfTrackIsLiked(currentTrack.id)
-                        recordUniqueListen(currentTrack.id)
+                        recordListeningHistory(currentTrack.id)
                     } catch (e: Exception) {
-                        recordUniqueListen(currentTrack.id)
-                        // Не перезаписуємо bandName якщо помилка (для плейлистів це нормально)
+                        recordListeningHistory(currentTrack.id)
                     }
                 }
             }
         }
 
-        // Оновлення upcoming queue
+        // Оновлення черги
         viewModelScope.launch {
             combine(audioController.currentPlaylist, track) { playlist, current ->
                 if (current == null || playlist.isEmpty()) return@combine emptyList<TrackDto>()
-
                 val currentIndex = playlist.indexOfFirst { it.id == current.id }
-                if (currentIndex == -1 || currentIndex == playlist.size - 1) {
-                    emptyList()
-                } else {
-                    playlist.subList(currentIndex + 1, playlist.size)
-                }
+                if (currentIndex == -1 || currentIndex == playlist.size - 1) emptyList()
+                else playlist.subList(currentIndex + 1, playlist.size)
             }.collect { nextTracks ->
                 _upcomingTracks.value = nextTracks
             }
@@ -117,16 +108,80 @@ class PlayerViewModel @Inject constructor(
     }
 
     // ==========================================
-    // ЗАВАНТАЖЕННЯ ТРЕКУ (звичайний спосіб — з гурту)
+    // ІСТОРІЯ ТА ЛІЧИЛЬНИК ПРОСЛУХОВУВАНЬ
+    // ==========================================
+
+    private fun recordListeningHistory(trackId: String) {
+        if (lastRecordedTrackId == trackId) return // Захист від подвійного спрацювання
+        lastRecordedTrackId = trackId
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val userId = supabaseClient.auth.currentUserOrNull()?.id ?: return@launch
+                val currentTime = java.time.Instant.now().toString()
+
+                // 1. Перевіряємо, чи слухав юзер цей трек раніше
+                val existingHistory = supabaseClient.postgrest["listen_history"]
+                    .select { filter { eq("user_id", userId); eq("track_id", trackId) } }
+                    .decodeSingleOrNull<HistoryDto>()
+
+                if (existingHistory != null) {
+                    // Трек вже є в histórico -> оновлюємо час (дедупликація, без дубля)
+                    supabaseClient.postgrest["listen_history"].update(
+                        { set("listened_at", currentTime) }
+                    ) { filter { eq("id", existingHistory.id!!) } }
+                    // plays_count НЕ збільшуємо — той самий юзер повторно слухає
+                } else {
+                    // Нове прослуховування цього треку цим користувачем
+                    supabaseClient.postgrest["listen_history"].insert(
+                        HistoryInsertDto(userId = userId, trackId = trackId, listenedAt = currentTime)
+                    )
+
+                    // Ліміт 20 треків — прибираємо найстаріший якщо перевищено
+                    val allUserHistory = supabaseClient.postgrest["listen_history"]
+                        .select { filter { eq("user_id", userId) } }
+                        .decodeList<HistoryDto>()
+                        .sortedByDescending { it.listenedAt }
+
+                    if (allUserHistory.size > 20) {
+                        val idsToDelete = allUserHistory.drop(20).mapNotNull { it.id }
+                        if (idsToDelete.isNotEmpty()) {
+                            supabaseClient.postgrest["listen_history"].delete {
+                                filter { isIn("id", idsToDelete) }
+                            }
+                        }
+                    }
+
+                    // plays_count збільшуємо тільки при першому прослуховуванні треку цим юзером
+                    val trackRow = supabaseClient.postgrest["tracks"]
+                        .select { filter { eq("id", trackId) } }
+                        .decodeSingleOrNull<TrackDto>()
+
+                    if (trackRow != null) {
+                        val newCount = trackRow.playsCount + 1
+                        _uniqueListenersCount.value = newCount // Оновлюємо відразу в UI
+
+                        supabaseClient.postgrest["tracks"].update(
+                            { set("plays_count", newCount) }
+                        ) { filter { eq("id", trackId) } }
+                    }
+                }
+
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    // ==========================================
+    // ЗАВАНТАЖЕННЯ ТРЕКУ
     // ==========================================
 
     fun loadTrack(trackId: String) {
         viewModelScope.launch {
             try {
-                // Якщо цей трек вже грає — нічого не робимо
                 if (audioController.currentTrack.value?.id == trackId) return@launch
 
-                // Перевіряємо чи трек вже є в поточній черзі
                 val currentQueue = audioController.currentPlaylist.value
                 val indexInQueue = currentQueue.indexOfFirst { it.id == trackId }
 
@@ -140,7 +195,6 @@ class PlayerViewModel @Inject constructor(
                     return@launch
                 }
 
-                // Fallback: якщо треку немає в черзі — завантажуємо весь гурт
                 val loadedTrack = bandRepository.getTrackById(trackId)
                 if (loadedTrack != null) {
                     val bandTracks = bandRepository.getTracksByBand(loadedTrack.bandId)
@@ -160,9 +214,6 @@ class PlayerViewModel @Inject constructor(
 
     // ==========================================
     // ВІДТВОРЕННЯ З ПЛЕЙЛІСТА
-    // Завжди замінює поточну чергу на треки плейліста.
-    // Вирішує проблему: при переключенні між гуртами
-    // черга збивалась на треки лише одного гурту.
     // ==========================================
 
     fun playPlaylistQueue(
@@ -174,12 +225,10 @@ class PlayerViewModel @Inject constructor(
             try {
                 if (tracks.isEmpty()) return@launch
 
-                // Конвертуємо PlaylistDetailTrack → TrackDto
-                // AudioController потребує: id, title, audioUrl, coverUrl, durationSec
                 val trackDtos = tracks.map { pt ->
                     TrackDto(
                         id          = pt.trackId,
-                        bandId      = "",       // навмисно порожній — назва гурту вже в bandName
+                        bandId      = "",
                         title       = pt.title,
                         durationSec = pt.durationSec,
                         audioUrl    = pt.audioUrl,
@@ -189,13 +238,8 @@ class PlayerViewModel @Inject constructor(
                 }
 
                 val safeIndex = startIndex.coerceIn(0, trackDtos.lastIndex)
-
-                // Замінюємо ВСЮ чергу на треки плейліста
                 audioController.playQueue(trackDtos, safeIndex, playlistName)
-
-                // Назва виконавця береться з PlaylistDetailTrack (вже завантажена)
                 _bandName.value = tracks[safeIndex].bandName
-
                 checkIfTrackIsLiked(tracks[safeIndex].trackId)
 
             } catch (e: Exception) {
@@ -212,26 +256,14 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val userId = supabaseClient.auth.currentUserOrNull()?.id ?: return@launch
-
                 val favoritesPlaylist = supabaseClient.postgrest["playlists"]
-                    .select {
-                        filter {
-                            eq("user_id", userId)
-                            eq("name", "Улюблені")
-                        }
-                    }
+                    .select { filter { eq("user_id", userId); eq("name", "Улюблені") } }
                     .decodeSingleOrNull<PlaylistDto>()
 
                 if (favoritesPlaylist != null) {
                     val existingTrack = supabaseClient.postgrest["playlist_tracks"]
-                        .select {
-                            filter {
-                                eq("playlist_id", favoritesPlaylist.id)
-                                eq("track_id", trackId)
-                            }
-                        }
+                        .select { filter { eq("playlist_id", favoritesPlaylist.id); eq("track_id", trackId) } }
                         .decodeList<PlaylistTrackDto>()
-
                     _isLiked.value = existingTrack.isNotEmpty()
                 } else {
                     _isLiked.value = false
@@ -246,14 +278,8 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val userId = supabaseClient.auth.currentUserOrNull()?.id ?: return@launch
-
                 var favoritesPlaylist = supabaseClient.postgrest["playlists"]
-                    .select {
-                        filter {
-                            eq("user_id", userId)
-                            eq("name", "Улюблені")
-                        }
-                    }
+                    .select { filter { eq("user_id", userId); eq("name", "Улюблені") } }
                     .decodeSingleOrNull<PlaylistDto>()
 
                 if (favoritesPlaylist == null) {
@@ -261,12 +287,7 @@ class PlayerViewModel @Inject constructor(
                         PlaylistInsertDto(userId = userId, name = "Улюблені", isPublic = false)
                     )
                     favoritesPlaylist = supabaseClient.postgrest["playlists"]
-                        .select {
-                            filter {
-                                eq("user_id", userId)
-                                eq("name", "Улюблені")
-                            }
-                        }
+                        .select { filter { eq("user_id", userId); eq("name", "Улюблені") } }
                         .decodeSingleOrNull<PlaylistDto>()
                 }
 
@@ -274,10 +295,7 @@ class PlayerViewModel @Inject constructor(
 
                 if (_isLiked.value) {
                     supabaseClient.postgrest["playlist_tracks"].delete {
-                        filter {
-                            eq("playlist_id", playlistId)
-                            eq("track_id", trackId)
-                        }
+                        filter { eq("playlist_id", playlistId); eq("track_id", trackId) }
                     }
                     _isLiked.value = false
                 } else {
@@ -296,83 +314,53 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-// ==========================================
-// PLAYLISTS
-// ==========================================
+    // ==========================================
+    // ПЛЕЙЛИСТИ
+    // ==========================================
 
     fun loadUserPlaylists() {
         viewModelScope.launch {
             try {
-                val userId = supabaseClient.auth.currentUserOrNull()?.id
-                    ?: return@launch
-
+                val userId = supabaseClient.auth.currentUserOrNull()?.id ?: return@launch
                 _playlists.value = supabaseClient.postgrest["playlists"]
-                    .select {
-                        filter {
-                            eq("user_id", userId)
-                        }
-                    }
+                    .select { filter { eq("user_id", userId) } }
                     .decodeList<PlaylistDto>()
-
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
     }
 
-    fun addTrackToPlaylist(
-        playlistId: String,
-        trackId: String
-    ) {
+    fun addTrackToPlaylist(playlistId: String, trackId: String) {
         viewModelScope.launch {
             try {
+                val existing = supabaseClient.postgrest["playlist_tracks"]
+                    .select { filter { eq("playlist_id", playlistId); eq("track_id", trackId) } }
+                    .decodeList<PlaylistTrackDto>()
 
-                // Перевірка чи трек вже існує
-                val existing =
-                    supabaseClient.postgrest["playlist_tracks"]
-                        .select {
-                            filter {
-                                eq("playlist_id", playlistId)
-                                eq("track_id", trackId)
-                            }
-                        }
-                        .decodeList<PlaylistTrackDto>()
+                if (existing.isNotEmpty()) return@launch
 
-                if (existing.isNotEmpty()) {
-                    return@launch
-                }
+                val currentTracks = supabaseClient.postgrest["playlist_tracks"]
+                    .select { filter { eq("playlist_id", playlistId) } }
+                    .decodeList<PlaylistTrackDto>()
 
-                // Отримуємо останню позицію
-                val currentTracks =
-                    supabaseClient.postgrest["playlist_tracks"]
-                        .select {
-                            filter {
-                                eq("playlist_id", playlistId)
-                            }
-                        }
-                        .decodeList<PlaylistTrackDto>()
+                val nextPosition = (currentTracks.maxOfOrNull { it.position } ?: 0) + 1
 
-                val nextPosition =
-                    (currentTracks.maxOfOrNull { it.position } ?: 0) + 1
-
-                // Додаємо трек
-                val newTrackDto =
+                supabaseClient.postgrest["playlist_tracks"].insert(
                     PlaylistTrackInsertDto(
                         playlistId = playlistId,
                         trackId = trackId,
                         position = nextPosition
                     )
-
-                supabaseClient.postgrest["playlist_tracks"]
-                    .insert(newTrackDto)
-
+                )
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
     }
+
     // ==========================================
-    // CONTROLS
+    // КЕРУВАННЯ
     // ==========================================
 
     fun togglePlayPause() = audioController.playPause()
@@ -381,6 +369,7 @@ class PlayerViewModel @Inject constructor(
         _progress.value = position
         audioController.seekTo(position)
     }
+
     fun addTrackToQueue(track: TrackDto, bandName: String) {
         audioController.addTrackToQueue(track, bandName)
     }
@@ -389,71 +378,4 @@ class PlayerViewModel @Inject constructor(
     fun skipToPrevious() = audioController.skipToPrevious()
     fun toggleShuffle() = audioController.toggleShuffle()
     fun toggleRepeat() = audioController.toggleRepeat()
-
-    private fun recordUniqueListen(trackId: String) {
-        if (lastRecordedTrackId == trackId) return
-        lastRecordedTrackId = trackId
-
-        viewModelScope.launch {
-            try {
-                val userId = supabaseClient.auth.currentUserOrNull()?.id ?: return@launch
-                val listenedAt = currentIsoTimestamp()
-
-                val existingHistory = supabaseClient.postgrest["history"]
-                    .select {
-                        filter {
-                            eq("user_id", userId)
-                            eq("track_id", trackId)
-                        }
-                    }
-                    .decodeList<HistoryDto>()
-
-                if (existingHistory.isEmpty()) {
-                    supabaseClient.postgrest["history"].insert(
-                        HistoryUpsertDto(
-                            userId = userId,
-                            trackId = trackId,
-                            listenedAt = listenedAt
-                        )
-                    )
-                } else {
-                    supabaseClient.postgrest["history"].update(
-                        { set("listened_at", listenedAt) }
-                    ) {
-                        filter {
-                            eq("user_id", userId)
-                            eq("track_id", trackId)
-                        }
-                    }
-                }
-
-                refreshUniqueListenersCount(trackId)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
-
-    private suspend fun refreshUniqueListenersCount(trackId: String) {
-        val uniqueListeners = supabaseClient.postgrest["history"]
-            .select { filter { eq("track_id", trackId) } }
-            .decodeList<HistoryDto>()
-            .map { it.userId }
-            .distinct()
-            .size
-
-        _uniqueListenersCount.value = uniqueListeners
-
-        supabaseClient.postgrest["tracks"].update(
-            { set("plays_count", uniqueListeners) }
-        ) {
-            filter { eq("id", trackId) }
-        }
-    }
-
-    private fun currentIsoTimestamp(): String {
-        val formatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
-        formatter.timeZone = TimeZone.getTimeZone("UTC")
-        return formatter.format(Date())
-    }
 }

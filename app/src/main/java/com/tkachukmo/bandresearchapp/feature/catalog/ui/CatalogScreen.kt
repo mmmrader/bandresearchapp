@@ -25,7 +25,6 @@ import coil3.compose.AsyncImage
 import com.tkachukmo.bandresearchapp.data.remote.dto.BandDto
 import com.tkachukmo.bandresearchapp.feature.catalog.viewmodel.CatalogViewModel
 
-// ДОДАНО: Функція для форматування лайків (24500 -> 24.5K)
 fun formatFollowersCount(count: Int): String {
     return when {
         count >= 1_000_000 -> String.format(java.util.Locale.US, "%.1fM", count / 1_000_000.0)
@@ -50,7 +49,6 @@ val genreFilters = listOf(
     GenreFilter("Хіп-хоп", "🎤"),
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CatalogScreen(
     modifier: Modifier = Modifier,
@@ -58,13 +56,12 @@ fun CatalogScreen(
     viewModel: CatalogViewModel = hiltViewModel()
 ) {
     val followedBands by viewModel.bands.collectAsState()
-    val topBands by viewModel.topBands.collectAsState() // ДОДАНО: Стейт для топу
+    val topBands by viewModel.topBands.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
 
     var selectedGenre by remember { mutableStateOf("Всі") }
 
-    // Фільтрація підписок
     val filteredFollowedBands = if (selectedGenre == "Всі") {
         followedBands
     } else {
@@ -89,9 +86,8 @@ fun CatalogScreen(
         modifier = modifier.fillMaxSize(),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = Color.Transparent,
-        contentWindowInsets = WindowInsets(0.dp)
+        contentWindowInsets = WindowInsets(0.dp) // Прибираємо зайві відступи
     ) { innerPadding ->
-
         Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             if (isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -99,9 +95,8 @@ fun CatalogScreen(
                 }
             } else {
                 LazyColumn(
-                    contentPadding = PaddingValues(bottom = 16.dp)
+                    contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
                 ) {
-                    // Фільтри
                     item {
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 16.dp),
@@ -118,7 +113,6 @@ fun CatalogScreen(
                         Spacer(modifier = Modifier.height(16.dp))
                     }
 
-                    // Блок підписок
                     item {
                         Row(
                             modifier = Modifier
@@ -161,7 +155,6 @@ fun CatalogScreen(
                         }
                     }
 
-                    // Блок Топу
                     item {
                         Spacer(modifier = Modifier.height(16.dp))
                         Row(
@@ -169,12 +162,10 @@ fun CatalogScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // ВИПРАВЛЕНО: Заголовок
                             Text("Топ гурти", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         }
                     }
 
-                    // ВИПРАВЛЕНО: Виводимо топ гуртів
                     itemsIndexed(topBands.take(10)) { index, band ->
                         BandListRow(
                             number = index + 1,
@@ -188,7 +179,6 @@ fun CatalogScreen(
     }
 }
 
-// ОНОВЛЕНО: Тепер приймає BandDto і виводить реальне фото + лайки
 @Composable
 fun BandGridCard(band: BandDto, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
     Card(
@@ -238,7 +228,6 @@ fun BandGridCard(band: BandDto, modifier: Modifier = Modifier, onClick: () -> Un
     }
 }
 
-// ОНОВЛЕНО: Тепер приймає BandDto і виводить реальне фото + лайки
 @Composable
 fun BandListRow(number: Int, band: BandDto, onClick: () -> Unit = {}) {
     Row(
