@@ -574,7 +574,9 @@ class ProfileViewModel @Inject constructor(
                 val fileName = "avatar_${userId}_${UUID.randomUUID()}.jpg"
                 supabaseClient.storage["images"].upload(fileName, bytes)
                 val imageUrl = supabaseClient.storage["images"].publicUrl(fileName)
-                supabaseClient.postgrest["profiles"].upsert(AvatarUpsertDto(id = userId, avatarUrl = imageUrl))
+                supabaseClient.postgrest["profiles"].update(
+                    { set("avatar_url", imageUrl) }
+                ) { filter { eq("id", userId) } }
                 loadUserProfile()
             } catch (t: Throwable) { handleException(t, "Помилка завантаження фото") }
         }

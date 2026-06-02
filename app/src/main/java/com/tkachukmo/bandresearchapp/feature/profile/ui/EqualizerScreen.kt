@@ -3,7 +3,6 @@ package com.tkachukmo.bandresearchapp.feature.profile.ui
 import android.media.audiofx.BassBoost
 import android.media.audiofx.Equalizer
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -15,24 +14,26 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 // ----------------------------------------------------------------
-// ОНОВЛЕНІ Пресети еквалайзера на 9 смуг (як у Wavelet)
+// ОНОВЛЕНІ Пресети еквалайзера на 9 смуг (Значення збільшено для відчутності)
 // ----------------------------------------------------------------
 private val EQ_PRESETS: Map<String, List<Int>> = linkedMapOf(
     "Нормальний"     to listOf(0, 0, 0, 0, 0, 0, 0, 0, 0),
-    "Поп"            to listOf(-200, -100, 200, 400, 500, 400, 200, -100, -200),
-    "Рок"            to listOf(500, 400, 200, -100, -200, -100, 200, 400, 500),
-    "Акустика"       to listOf(300, 200, 100, 0, 0, 0, 100, 200, 300),
-    "Електроніка"    to listOf(500, 400, 100, 0, -200, 0, 100, 400, 500),
+    "Поп"            to listOf(-400, -200, 400, 800, 1000, 800, 400, -200, -400),
+    "Рок"            to listOf(1000, 800, 400, -200, -400, -200, 400, 800, 1000),
+    "Акустика"       to listOf(600, 400, 200, 0, 0, 0, 200, 400, 600),
+    "Електроніка"    to listOf(1000, 800, 200, 0, -400, 0, 200, 800, 1000),
     "Користувацький" to listOf(0, 0, 0, 0, 0, 0, 0, 0, 0)
 )
 
@@ -204,7 +205,7 @@ fun EqualizerScreen(onNavigateBack: () -> Unit) {
                         ) {
                             uiLevels.forEachIndexed { index, level ->
                                 EqBandSlider(
-                                    modifier = Modifier.weight(1f), // ТЕПЕР ВАГА ПРАЦЮЄ ПРАВИЛЬНО (В ROW)
+                                    modifier = Modifier.weight(1f),
                                     frequency = uiLabels[index],
                                     levelMb = level,
                                     minMb = minMb,
@@ -300,7 +301,7 @@ fun EqualizerScreen(onNavigateBack: () -> Unit) {
 }
 
 // ----------------------------------------------------------------
-// Вертикальний слайдер однієї смуги EQ
+// ВЕРТИКАЛЬНИЙ СЛАЙДЕР (ВИПРАВЛЕНИЙ)
 // ----------------------------------------------------------------
 @Composable
 private fun EqBandSlider(
@@ -330,7 +331,7 @@ private fun EqBandSlider(
         Box(
             modifier = Modifier
                 .height(200.dp)
-                .fillMaxWidth(),
+                .width(40.dp),
             contentAlignment = Alignment.Center
         ) {
             Slider(
@@ -343,9 +344,29 @@ private fun EqBandSlider(
                     inactiveTrackColor = Color.Transparent,
                     thumbColor = if (enabled) MaterialTheme.colorScheme.primary else Color.Gray
                 ),
-                modifier     = Modifier
+                modifier = Modifier
+                    .graphicsLayer {
+                        rotationZ = -90f
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.5f)
+                    }
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(
+                            Constraints(
+                                minWidth = constraints.minHeight,
+                                maxWidth = constraints.maxHeight,
+                                minHeight = constraints.minWidth,
+                                maxHeight = constraints.maxWidth
+                            )
+                        )
+                        layout(placeable.height, placeable.width) {
+                            placeable.place(
+                                x = -(placeable.width / 2 - placeable.height / 2),
+                                y = -(placeable.height / 2 - placeable.width / 2)
+                            )
+                        }
+                    }
                     .width(200.dp)
-                    .rotate(270f)
+                    .height(40.dp)
             )
         }
         Spacer(modifier = Modifier.height(4.dp))
