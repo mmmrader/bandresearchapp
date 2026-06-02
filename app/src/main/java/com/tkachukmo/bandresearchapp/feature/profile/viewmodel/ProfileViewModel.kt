@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tkachukmo.bandresearchapp.core.notifications.NotificationSettingsRepository
 import com.tkachukmo.bandresearchapp.data.remote.dto.BandDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.FollowDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.HistoryDto
@@ -85,7 +86,8 @@ data class PlaylistDetailTrack(
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
     private val supabaseClient: SupabaseClient,
-    @ApplicationContext private val context: Context // <--- ДОДАНО ДЛЯ ПАМ'ЯТІ
+    @ApplicationContext private val context: Context,
+    private val notificationSettingsRepository: NotificationSettingsRepository// <--- ДОДАНО ДЛЯ ПАМ'ЯТІ
 ) : ViewModel() {
 
     private val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
@@ -112,10 +114,8 @@ class ProfileViewModel @Inject constructor(
 
     private val _userEmail = MutableStateFlow<String?>("")
     val userEmail: StateFlow<String?> = _userEmail.asStateFlow()
-
-    // Відновлюємо збережений стан з пам'яті
-    private val _notificationsEnabled = MutableStateFlow(prefs.getBoolean("notifications_enabled", false))
-    val notificationsEnabled: StateFlow<Boolean> = _notificationsEnabled.asStateFlow()
+    // ВСТАВ ЗАМІСТЬ НИХ:
+    val notificationsEnabled: StateFlow<Boolean> = notificationSettingsRepository.enabled
 
     private val _profile = MutableStateFlow<ProfileDto?>(null)
     val profile: StateFlow<ProfileDto?> = _profile.asStateFlow()
@@ -401,9 +401,8 @@ class ProfileViewModel @Inject constructor(
     // ==========================================
 
     fun setNotificationsEnabled(enabled: Boolean) {
-        _notificationsEnabled.value = enabled
-        // Зберігаємо вибір користувача у пам'ять
-        prefs.edit().putBoolean("notifications_enabled", enabled).apply()
+        // Тепер ми передаємо команду в єдиний правильний репозиторій
+        notificationSettingsRepository.setEnabled(enabled)
     }
 
     fun applyForVacancy(vacancyId: String) {
