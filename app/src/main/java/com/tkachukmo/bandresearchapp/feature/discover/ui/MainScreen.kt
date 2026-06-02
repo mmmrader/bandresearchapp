@@ -1,18 +1,22 @@
 package com.tkachukmo.bandresearchapp.feature.discover.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.*
+import kotlinx.coroutines.delay
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.LibraryMusic
-import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Message
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Person
@@ -82,12 +86,15 @@ fun MainScreen(
     onNavigateToBandManager: () -> Unit = {},
     onLogout: () -> Unit = {},
     onNavigateToPlayer: (String) -> Unit = {},
+    // НОВИЙ параметр для переходу до чатів
     onNavigateToChatList: () -> Unit = {},
+    onRefreshApp: () -> Unit = {},
     onNavigateToEditProfile: () -> Unit = {},
     onNavigateToPlaylists: () -> Unit = {},
     onNavigateToHistory: () -> Unit = {},
     onNavigateToSecurity: () -> Unit = {},
-    onNavigateToHelp: () -> Unit = {}
+    onNavigateToHelp: () -> Unit = {},
+    onNavigateToEqualizer: () -> Unit = {}
 ) {
     var selectedIndex by rememberSaveable { mutableIntStateOf(initialTab) }
 
@@ -110,6 +117,7 @@ fun MainScreen(
                         }
                     },
                     actions = {
+                        // ІКОНКА ЧАТІВ (повідомлення) — НОВА, зліва від дзвіночка
                         IconButton(onClick = onNavigateToChatList) {
                             Icon(Icons.Default.Message, contentDescription = "Повідомлення")
                         }
@@ -122,15 +130,7 @@ fun MainScreen(
                     title = { Text("Пошук") }
                 )
                 2 -> TopAppBar(
-                    title = { Text("Події") },
-                    actions = {
-                        IconButton(onClick = {}) {
-                            Icon(Icons.Default.Map, contentDescription = "Карта")
-                        }
-                        IconButton(onClick = {}) {
-                            Icon(Icons.Default.Tune, contentDescription = "Фільтри")
-                        }
-                    }
+                    title = { Text("Події") }
                 )
                 3 -> TopAppBar(
                     title = { Text("Профіль") },
@@ -141,6 +141,9 @@ fun MainScreen(
         bottomBar = {
             Column {
                 MiniPlayer(onNavigateToPlayer = onNavigateToPlayer)
+
+                // Кнопка "Оновити" над NavBar
+                RefreshBar(onRefresh = onRefreshApp)
 
                 NavigationBar {
                     bottomNavItems.forEachIndexed { index, item ->
@@ -181,9 +184,89 @@ fun MainScreen(
                 onNavigateToHistory = onNavigateToHistory,
                 onNavigateToSecurity = onNavigateToSecurity,
                 onNavigateToHelp = onNavigateToHelp,
-                onNavigateToBandDetail = onNavigateToBandDetail,
-                onNavigateToSearch = { selectedIndex = 1 } // Перехід на вкладку пошуку
+                onNavigateToEqualizer = onNavigateToEqualizer,
+                onNavigateToBandDetail = onNavigateToBandDetail
             )
+        }
+    }
+}
+
+// ----------------------------------------------------------------
+// RefreshBar — смуга "Оновити" над таскбаром з перевіркою мережі
+// ----------------------------------------------------------------
+@Composable
+fun RefreshBar(onRefresh: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var isRefreshing by remember { mutableStateOf(false) }
+    var noInternet by remember { mutableStateOf(false) }
+
+    fun isOnline(): Boolean {
+        val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+                as android.net.ConnectivityManager
+        val cap = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        return cap.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    LaunchedEffect(isRefreshing) {
+        if (isRefreshing) {
+            kotlinx.coroutines.delay(1200)
+            isRefreshing = false
+        }
+    }
+
+    if (noInternet) {
+        androidx.compose.foundation.layout.Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.errorContainer)
+                .padding(vertical = 6.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                "⚠️ Немає підключення до інтернету",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+        }
+    }
+
+    androidx.compose.foundation.layout.Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(32.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+            .clickable {
+                if (!isOnline()) {
+                    noInternet = true
+                    return@clickable
+                }
+                noInternet = false
+                isRefreshing = true
+                onRefresh()
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        if (isRefreshing) {
+            androidx.compose.material3.LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().height(2.dp)
+            )
+        } else {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    Icons.Default.Refresh,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "Оновити",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

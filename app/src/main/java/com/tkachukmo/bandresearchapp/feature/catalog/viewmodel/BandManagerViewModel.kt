@@ -99,16 +99,37 @@ class BandManagerViewModel @Inject constructor(
 
     fun clearError() { _errorMessage.value = null }
 
-    fun checkUserBand() {
+    private fun checkUserBand() {
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
             try {
                 val userId = supabaseClient.auth.currentUserOrNull()?.id
                 if (userId != null) {
-                    val band = supabaseClient.postgrest["bands"].select { filter { eq("manager_id", userId) } }.decodeSingleOrNull<BandDto>()
-                    _currentBand.value = band
+                    val band = supabaseClient.postgrest["bands"]
+                        .select { filter { eq("manager_id", userId) } }
+                        .decodeSingleOrNull<BandDto>()
                     if (band != null) {
+                        // Рахуємо сумарні прослуховування всіх треків гурту з listen_history
+                        val totalPlays = runCatching {
+                            @kotlinx.serialization.Serializable
+                            data class CountDto(@kotlinx.serialization.SerialName("track_id") val trackId: String)
+
+                            val trackIds = supabaseClient.postgrest["tracks"]
+                                .select { filter { eq("band_id", band.id) } }
+                                .decodeList<TrackDto>()
+                                .map { it.id }
+
+                            if (trackIds.isEmpty()) 0
+                            else {
+                                supabaseClient.postgrest["listen_history"]
+                                    .select { filter { isIn("track_id", trackIds) } }
+                                    .decodeList<CountDto>()
+                                    .size
+                            }
+                        }.getOrElse { band.playsCount }
+
+                        _currentBand.value = band.copy(playsCount = totalPlays)
                         loadReleases(band.id)
                         loadTracks(band.id)
                         loadVideos(band.id)

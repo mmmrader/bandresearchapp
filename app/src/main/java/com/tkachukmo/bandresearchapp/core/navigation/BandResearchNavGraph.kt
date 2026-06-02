@@ -31,6 +31,7 @@ import com.tkachukmo.bandresearchapp.feature.profile.ui.PlaylistDetailScreen
 import com.tkachukmo.bandresearchapp.feature.profile.ui.PlaylistsScreen
 import com.tkachukmo.bandresearchapp.feature.profile.ui.ProfileScreen
 import com.tkachukmo.bandresearchapp.feature.profile.ui.SecurityScreen
+import com.tkachukmo.bandresearchapp.feature.profile.ui.EqualizerScreen
 
 import com.tkachukmo.bandresearchapp.data.remote.dto.PlaylistDto
 
@@ -69,6 +70,7 @@ object Routes {
     const val HISTORY = "history"
     const val SECURITY = "security"
     const val HELP = "help"
+    const val EQUALIZER = "equalizer"
 
     // Playlist detail
     const val PLAYLIST_DETAIL_BASE = "playlist_detail"
@@ -165,6 +167,12 @@ fun BandResearchNavGraph(
                 onNavigateToChatList = {
                     navController.navigate(Routes.CHAT_LIST)
                 },
+                onRefreshApp = {
+                    // Перезавантажуємо MainScreen на першій вкладці
+                    navController.navigate(Routes.MAIN_BASE) {
+                        popUpTo(Routes.MAIN_BASE) { inclusive = true }
+                    }
+                },
                 onLogout = {
                     navController.navigate(Routes.LOGIN) {
                         popUpTo(Routes.MAIN_BASE) { inclusive = true }
@@ -174,7 +182,8 @@ fun BandResearchNavGraph(
                 onNavigateToPlaylists = { navController.navigate(Routes.PLAYLISTS) },
                 onNavigateToHistory = { navController.navigate(Routes.HISTORY) },
                 onNavigateToSecurity = { navController.navigate(Routes.SECURITY) },
-                onNavigateToHelp = { navController.navigate(Routes.HELP) }
+                onNavigateToHelp = { navController.navigate(Routes.HELP) },
+                onNavigateToEqualizer = { navController.navigate(Routes.EQUALIZER) }
             )
         }
 
@@ -238,6 +247,7 @@ fun BandResearchNavGraph(
                 onNavigateToHistory = { navController.navigate(Routes.HISTORY) },
                 onNavigateToSecurity = { navController.navigate(Routes.SECURITY) },
                 onNavigateToHelp = { navController.navigate(Routes.HELP) },
+                onNavigateToEqualizer = { navController.navigate(Routes.EQUALIZER) },
                 onNavigateToBandDetail = { bandId ->
                     navController.navigate("${Routes.BAND_DETAIL_BASE}/$bandId")
                 },
@@ -304,6 +314,10 @@ fun BandResearchNavGraph(
 
         composable(Routes.HELP) {
             HelpScreen(onNavigateBack = { navController.popBackStack() })
+        }
+
+        composable(Routes.EQUALIZER) {
+            EqualizerScreen(onNavigateBack = { navController.popBackStack() })
         }
 
         // -------------------- BAND MANAGER --------------------

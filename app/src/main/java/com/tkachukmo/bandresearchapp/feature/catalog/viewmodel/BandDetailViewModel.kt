@@ -100,11 +100,7 @@ class BandDetailViewModel @Inject constructor(
                         .select { filter { eq("band_id", bandId) } }
                         .decodeList<TrackDto>()
 
-                    _tracks.value = try {
-                        bandTracks.withUniqueListenerCounts()
-                    } catch (_: Throwable) {
-                        bandTracks
-                    }
+                    _tracks.value = bandTracks
 
                     _releases.value = try {
                         supabaseClient.postgrest["releases"]

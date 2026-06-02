@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import com.tkachukmo.bandresearchapp.feature.profile.ui.EqController
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -40,6 +41,8 @@ import com.canhub.cropper.CropImageContractOptions
 import com.canhub.cropper.CropImageOptions
 import com.canhub.cropper.CropImageView
 import com.tkachukmo.bandresearchapp.data.remote.dto.BandDto
+import com.tkachukmo.bandresearchapp.data.remote.dto.PlaylistDto
+import com.tkachukmo.bandresearchapp.data.remote.dto.VacancyDto
 import com.tkachukmo.bandresearchapp.feature.profile.viewmodel.ProfileViewModel
 
 // ==========================================
@@ -80,6 +83,7 @@ fun ProfileScreen(
     onNavigateToSecurity: () -> Unit = {},
     onNavigateToHelp: () -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
+    onNavigateToEqualizer: () -> Unit = {},
     onNavigateToBandDetail: (String) -> Unit = {},
     onLogout: () -> Unit = {},
     viewModel: ProfileViewModel = hiltViewModel()
@@ -91,6 +95,7 @@ fun ProfileScreen(
     val profile by viewModel.profile.collectAsState()
     val followedBands by viewModel.followedBands.collectAsState()
     val managedBand by viewModel.userBand.collectAsState()
+    val matchingVacancies by viewModel.matchingVacancies.collectAsState()
     val playlists by viewModel.playlists.collectAsState()
     val history by viewModel.listeningHistory.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
@@ -100,6 +105,7 @@ fun ProfileScreen(
     val displayName = profile?.displayName ?: "Користувач"
     val initials = displayName.take(2).uppercase()
     val userGenres = profile?.musicGenres ?: emptyList()
+    var showMatchingVacancies by remember { mutableStateOf(false) }
 
     // Snackbar
     val snackbarHostState = remember { SnackbarHostState() }
@@ -150,9 +156,7 @@ fun ProfileScreen(
     }
 
     Scaffold(
-        modifier = modifier.fillMaxSize(), // Використовуємо модифікатор з MainScreen
         containerColor = DarkBg,
-        contentWindowInsets = WindowInsets(0.dp), // Це прибере "міні смугу"
         snackbarHost = {
             SnackbarHost(snackbarHostState) { data ->
                 Snackbar(
@@ -164,7 +168,7 @@ fun ProfileScreen(
             }
         }
     ) { paddingValues ->
-        Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) { // Застосовуємо тільки внутрішній відступ
+        Box(modifier = modifier.fillMaxSize().padding(paddingValues)) {
             if (isLoading) {
                 CircularProgressIndicator(color = NeonPurple, modifier = Modifier.align(Alignment.Center))
             } else {
@@ -177,7 +181,7 @@ fun ProfileScreen(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(top = 16.dp, bottom = 24.dp), // Зменшено відступ зверху
+                                .padding(top = 32.dp, bottom = 24.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Box(
@@ -246,7 +250,7 @@ fun ProfileScreen(
                                 horizontalArrangement = Arrangement.SpaceEvenly
                             ) {
                                 ProfileStatItem(value = followedBands.size.toString(), label = "Підписки")
-                                ProfileStatItem(value = history.size.toString(), label = "Треки")
+                                ProfileStatItem(value = history.size.toString(), label = "Прослухано треків")
                                 ProfileStatItem(value = playlists.size.toString(), label = "Плейлисти")
                             }
                         }
@@ -258,7 +262,7 @@ fun ProfileScreen(
                             NoBandActionsCard(
                                 instrument = profile?.instrument,
                                 onCreateBand = onNavigateToBandManager,
-                                onNavigateToSearch = onNavigateToSearch
+                                onNavigateToSearch = onNavigateToSearch // <--- Передаємо навігацію
                             )
                         } else {
                             Box(
@@ -389,7 +393,7 @@ fun ProfileScreen(
                                 ProfileMenuItem(
                                     Icons.Default.MusicNote,
                                     "Історія прослуховувань",
-                                    "${history.size} треки"
+                                    historyCountLabel(history.size)
                                 ),
                                 onClick = onNavigateToHistory
                             )
@@ -438,6 +442,15 @@ fun ProfileScreen(
                                 ProfileMenuItem(Icons.Default.Security, "Безпека та пароль"),
                                 onClick = onNavigateToSecurity
                             )
+                            HorizontalDivider(color = SurfaceVariantDark)
+                            ProfileMenuItemRow(
+                                ProfileMenuItem(
+                                    Icons.Default.GraphicEq,
+                                    "Еквалайзер",
+                                    if (EqController.isEqualizerEnabled()) "Увімкнено" else "Вимкнено"
+                                ),
+                                onClick = onNavigateToEqualizer
+                            )
                         }
                         Spacer(modifier = Modifier.height(24.dp))
                     }
@@ -482,7 +495,7 @@ fun ProfileScreen(
 fun NoBandActionsCard(
     instrument: String?,
     onCreateBand: () -> Unit,
-    onNavigateToSearch: () -> Unit
+    onNavigateToSearch: () -> Unit // <--- Новий параметр
 ) {
     val context = LocalContext.current
 
@@ -514,11 +527,13 @@ fun NoBandActionsCard(
             }
             OutlinedButton(
                 onClick = {
+                    // Показуємо повідомлення користувачу
                     android.widget.Toast.makeText(
                         context,
                         "Знайдіть гурт через пошук та перейдіть на його сторінку для відгуку",
                         android.widget.Toast.LENGTH_LONG
                     ).show()
+                    // Перекидаємо на пошук
                     onNavigateToSearch()
                 },
                 modifier = Modifier.weight(1f)
@@ -646,4 +661,15 @@ private fun canPostNotifications(context: Context): Boolean {
                 context,
                 Manifest.permission.POST_NOTIFICATIONS
             ) == PackageManager.PERMISSION_GRANTED
+}
+
+// Правильний відмінок для лічильника треків в历史
+private fun historyCountLabel(count: Int): String {
+    return when {
+        count == 0 -> "Ще не прослухано"
+        count % 100 in 11..19 -> "$count треків"
+        count % 10 == 1 -> "$count трек"
+        count % 10 in 2..4 -> "$count треки"
+        else -> "$count треків"
+    }
 }

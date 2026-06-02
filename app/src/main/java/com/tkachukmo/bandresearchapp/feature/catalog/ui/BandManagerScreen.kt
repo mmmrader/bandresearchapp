@@ -2,6 +2,7 @@ package com.tkachukmo.bandresearchapp.feature.catalog.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.app.DatePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -148,8 +149,61 @@ fun BandDashboard(
     val context = LocalContext.current
     val scrollState = rememberScrollState()
 
-    val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let { viewModel.uploadBandImage(context, it, false) } }
-    val coverPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let { viewModel.uploadBandImage(context, it, true) } }
+    // --- Crop-прев'ю стан ---
+    var pendingUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var pendingIsCover by remember { mutableStateOf(false) }
+
+    val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let { pendingUri = it; pendingIsCover = false }
+    }
+    val coverPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let { pendingUri = it; pendingIsCover = true }
+    }
+
+    // Діалог прев'ю перед завантаженням
+    if (pendingUri != null) {
+        AlertDialog(
+            onDismissRequest = { pendingUri = null },
+            title = { Text(if (pendingIsCover) "Обкладинка гурту" else "Аватар гурту") },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        if (pendingIsCover) "Фото буде обрізано під 16:9"
+                        else "Фото буде обрізано у квадрат",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp)
+                            .clip(if (pendingIsCover) RoundedCornerShape(12.dp) else CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AsyncImage(
+                            model = pendingUri,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val uri = pendingUri ?: return@Button
+                    val isCover = pendingIsCover
+                    pendingUri = null
+                    viewModel.uploadBandImage(context, uri, isCover)
+                }) { Text("Завантажити") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingUri = null }) { Text("Скасувати") }
+            }
+        )
+    }
 
     Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
         Box(modifier = Modifier.fillMaxWidth().height(300.dp)) {
@@ -260,10 +314,11 @@ fun BandDashboard(
                     "Підписників",
                     MaterialTheme.colorScheme.secondaryContainer
                 )
+                val totalPlays = tracks.sumOf { it.playsCount }
                 DashboardStatCard(
                     Modifier.weight(1f),
                     Icons.Default.PlayArrow,
-                    band.playsCount.toString(),
+                    totalPlays.toString(),
                     "Прослуховувань",
                     MaterialTheme.colorScheme.tertiaryContainer
                 )
@@ -480,7 +535,10 @@ fun EventEditorCard(
                     FilterChip(selected = type == option, onClick = { type = option }, label = { Text(option) })
                 }
             }
-            OutlinedTextField(date, { date = it }, label = { Text("Дата: 2026-06-12") }, modifier = Modifier.fillMaxWidth())
+
+            // Вибір дати через системний DatePickerDialog
+            BandDatePickerField(value = date, onDateSelected = { date = it }, label = "Дата події")
+
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(venue, { venue = it }, label = { Text("Місце") }, modifier = Modifier.weight(1f))
                 OutlinedTextField(city, { city = it }, label = { Text("Місто") }, modifier = Modifier.weight(1f))
@@ -495,6 +553,76 @@ fun EventEditorCard(
             }
         }
     }
+}
+
+// ----------------------------------------------------------------
+// DatePickerField — поле вибору дати через системний DatePickerDialog
+// Зберігає у ISO 8601 формат для Supabase, показує dd.MM.yyyy
+// ----------------------------------------------------------------
+@Composable
+fun BandDatePickerField(
+    value: String,
+    onDateSelected: (String) -> Unit,
+    label: String = "Дата"
+) {
+    val context = LocalContext.current
+    val cal = remember { java.util.Calendar.getInstance() }
+
+    // Якщо вже є значення — заповнюємо календар
+    remember(value) {
+        if (value.isNotBlank()) {
+            runCatching {
+                val odt = java.time.OffsetDateTime.parse(value)
+                cal.set(odt.year, odt.monthValue - 1, odt.dayOfMonth)
+            }.recoverCatching {
+                val ld = java.time.LocalDate.parse(value.take(10))
+                cal.set(ld.year, ld.monthValue - 1, ld.dayOfMonth)
+            }
+        }
+    }
+
+    val dialog = remember {
+        DatePickerDialog(
+            context,
+            { _, y, m, d ->
+                // ISO 8601 з timezone для Supabase
+                val iso = String.format("%04d-%02d-%02dT00:00:00+00:00", y, m + 1, d)
+                onDateSelected(iso)
+                cal.set(y, m, d)
+            },
+            cal.get(java.util.Calendar.YEAR),
+            cal.get(java.util.Calendar.MONTH),
+            cal.get(java.util.Calendar.DAY_OF_MONTH)
+        )
+    }
+
+    // Відображаємо у зручному форматі
+    val displayValue = remember(value) {
+        if (value.isBlank()) return@remember ""
+        runCatching {
+            val odt = java.time.OffsetDateTime.parse(value)
+            odt.format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))
+        }.recoverCatching {
+            val ld = java.time.LocalDate.parse(value.take(10))
+            ld.format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))
+        }.getOrDefault(value)
+    }
+
+    OutlinedTextField(
+        value = displayValue,
+        onValueChange = {},
+        readOnly = true,
+        label = { Text(label) },
+        placeholder = { Text("Оберіть дату") },
+        trailingIcon = {
+            IconButton(onClick = { dialog.show() }) {
+                Icon(Icons.Default.DateRange, contentDescription = "Вибрати дату")
+            }
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { dialog.show() }
+    )
 }
 
 @Composable

@@ -412,7 +412,7 @@ fun BandDetailContent(
                             MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.Bold
                     )
-
+                    val totalPlays = tracks.sumOf { it.playsCount }
                     Text(
                         text =
                             "${band.followersCount} підписників",
@@ -1073,7 +1073,7 @@ fun BandDetailContent(
 
                 Text(
                     text =
-                        "$bandName • ${track.playsCount} унікальних слухачів",
+                        "$bandName • ${track.playsCount} слухачів",
 
                     style =
                         MaterialTheme.typography.bodySmall

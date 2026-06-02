@@ -406,7 +406,7 @@ private fun TrackInfoRow(title: String, artist: String, uniqueListenersCount: In
             Text(text = title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(text = artist, style = MaterialTheme.typography.titleMedium, color = Color.White.copy(alpha = 0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                text = "$uniqueListenersCount унікальних слухачів",
+                text = "$uniqueListenersCount слухачів",
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = 0.55f),
                 maxLines = 1,

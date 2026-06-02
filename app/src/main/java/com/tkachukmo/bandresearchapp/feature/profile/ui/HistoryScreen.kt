@@ -43,7 +43,7 @@ fun HistoryScreen(
     if (showClearDialog) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
-            title = { Text("Очистити历史?") },
+            title = { Text("Очистити історію?") },
             text = { Text("Всі записи про прослухані треки будуть видалені.") },
             confirmButton = {
                 Button(
@@ -71,7 +71,7 @@ fun HistoryScreen(
                         IconButton(onClick = { showClearDialog = true }) {
                             Icon(
                                 Icons.Default.Delete,
-                                contentDescription = "Очистити历史",
+                                contentDescription = "Очистити історію",
                                 tint = MaterialTheme.colorScheme.error
                             )
                         }

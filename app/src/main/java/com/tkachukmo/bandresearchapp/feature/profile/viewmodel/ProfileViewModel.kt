@@ -15,7 +15,7 @@ import com.tkachukmo.bandresearchapp.data.remote.dto.ApplicationInsertDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.TrackDto
 import com.tkachukmo.bandresearchapp.data.remote.dto.VacancyDto
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext // <--- ДОДАНО ІМПОРТ
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.tkachukmo.bandresearchapp.data.remote.dto.HistoryInsertDto
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import java.util.UUID
 import javax.inject.Inject
 
@@ -88,6 +89,23 @@ class ProfileViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+    private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
+
+    // ── Кеш профілю ─────────────────────────────────────────────
+    private fun saveProfileCache(profile: ProfileDto) {
+        runCatching { prefs.edit().putString("cached_profile", json.encodeToString(ProfileDto.serializer(), profile)).apply() }
+    }
+
+    private fun loadProfileCache(): ProfileDto? {
+        val raw = prefs.getString("cached_profile", null) ?: return null
+        return runCatching { json.decodeFromString(ProfileDto.serializer(), raw) }.getOrNull()
+    }
+
+    private fun saveEmailCache(email: String) {
+        prefs.edit().putString("cached_email", email).apply()
+    }
+
+    private fun loadEmailCache(): String? = prefs.getString("cached_email", null)
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -133,6 +151,9 @@ class ProfileViewModel @Inject constructor(
     val matchingVacancies: StateFlow<List<VacancyDto>> = _matchingVacancies.asStateFlow()
 
     init {
+        // Одразу показуємо кешовані дані (якщо є) — без очікування мережі
+        _profile.value = loadProfileCache()
+        _userEmail.value = loadEmailCache()
         loadUserProfile()
     }
 
@@ -156,10 +177,13 @@ class ProfileViewModel @Inject constructor(
                 val currentUser = supabaseClient.auth.currentUserOrNull()
                 val userId = currentUser?.id ?: return@launch
                 _userEmail.value = currentUser.email
+                currentUser.email?.let { saveEmailCache(it) }
 
-                _profile.value = supabaseClient.postgrest["profiles"]
+                val profile = supabaseClient.postgrest["profiles"]
                     .select { filter { eq("id", userId) } }
                     .decodeSingleOrNull<ProfileDto>()
+                _profile.value = profile
+                profile?.let { saveProfileCache(it) }
 
                 val follows = supabaseClient.postgrest["follows"]
                     .select { filter { eq("user_id", userId) } }
@@ -342,7 +366,7 @@ class ProfileViewModel @Inject constructor(
             try {
                 val userId = supabaseClient.auth.currentUserOrNull()?.id ?: return@launch
                 val currentTime = java.time.Instant.now().toString()
-                supabaseClient.postgrest["history"].insert(
+                supabaseClient.postgrest["listen_history"].insert(
                     HistoryInsertDto(
                         userId = userId,
                         trackId = trackId,
@@ -405,7 +429,7 @@ class ProfileViewModel @Inject constructor(
 
     private suspend fun loadHistoryData(userId: String) {
         try {
-            val rawHistory = supabaseClient.postgrest["history"]
+            val rawHistory = supabaseClient.postgrest["listen_history"]
                 .select { filter { eq("user_id", userId) } }
                 .decodeList<HistoryDto>()
                 .sortedByDescending { it.listenedAt }
@@ -415,10 +439,15 @@ class ProfileViewModel @Inject constructor(
                 val tracks = supabaseClient.postgrest["tracks"]
                     .select { filter { isIn("id", trackIds) } }
                     .decodeList<TrackDto>()
-                val bandIds = tracks.map { it.bandId }.distinct()
-                val bands = supabaseClient.postgrest["bands"]
-                    .select { filter { isIn("id", bandIds) } }
-                    .decodeList<BandDto>()
+
+                // ФІКС: Відфільтровуємо пусті bandId, щоб Supabase не крашився
+                val bandIds = tracks.map { it.bandId }.filter { it.isNotBlank() }.distinct()
+
+                val bands = if (bandIds.isNotEmpty()) {
+                    supabaseClient.postgrest["bands"]
+                        .select { filter { isIn("id", bandIds) } }
+                        .decodeList<BandDto>()
+                } else emptyList()
 
                 _listeningHistory.value = rawHistory.mapNotNull { hist ->
                     val track = tracks.find { it.id == hist.trackId } ?: return@mapNotNull null

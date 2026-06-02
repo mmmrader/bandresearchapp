@@ -1762,7 +1762,7 @@ fun HelpScreen(onNavigateBack: () -> Unit) {
                 Button(
                     onClick = {
                         context.startActivity(
-                            Intent(Intent.ACTION_VIEW, "https://t.me/underrag3ed".toUri())
+                            Intent(Intent.ACTION_VIEW, "https://t.me/underraged".toUri())
                         )
                     },
                     modifier = Modifier.fillMaxWidth().height(64.dp),

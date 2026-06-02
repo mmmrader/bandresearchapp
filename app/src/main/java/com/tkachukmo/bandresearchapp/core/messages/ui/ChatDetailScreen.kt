@@ -39,7 +39,6 @@ private val SAFE_DOMAINS = listOf(
 )
 
 private val URL_REGEX = "(https?://[\\w\\d./_\\-?=&%+#@~:!*,;]+)".toRegex()
-
 private const val SAFE_LINK_TAG   = "SAFE_LINK"
 private const val UNSAFE_LINK_TAG = "UNSAFE_LINK"
 
@@ -61,65 +60,40 @@ fun ChatDetailScreen(
 
     val displayName = partnerProfile?.displayName?.takeIf { it.isNotBlank() } ?: chatName
 
-    LaunchedEffect(chatPartnerId) {
-        viewModel.openChat(chatPartnerId)
-    }
+    LaunchedEffect(chatPartnerId) { viewModel.openChat(chatPartnerId) }
+    DisposableEffect(chatPartnerId) { onDispose { viewModel.closeChat() } }
 
-    DisposableEffect(chatPartnerId) {
-        onDispose { viewModel.closeChat() }
-    }
-
+    // Прокрутка до останнього повідомлення
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(displayName, fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
-                    }
-                }
-            )
-        },
-        bottomBar = {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                    .navigationBarsPadding(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    placeholder = { Text("Повідомлення...") },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(24.dp),
-                    maxLines = 4
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                FloatingActionButton(
-                    onClick = {
-                        if (text.isNotBlank()) {
-                            viewModel.sendMessage(chatPartnerId, text)
-                            text = ""
-                        }
-                    },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    elevation = FloatingActionButtonDefaults.elevation(0.dp),
-                    modifier = Modifier.size(52.dp)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Надіслати")
+    // ---------------------------------------------------------------
+    // Використовуємо Column + imePadding замість Scaffold —
+    // це гарантує що вся розмітка піднімається разом з клавіатурою
+    // ---------------------------------------------------------------
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .imePadding()                    // <-- весь екран реагує на клавіатуру
+            .systemBarsPadding()
+    ) {
+        // TopBar
+        TopAppBar(
+            title = { Text(displayName, fontWeight = FontWeight.Bold) },
+            navigationIcon = {
+                IconButton(onClick = onNavigateBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                 }
             }
-        }
-    ) { paddingValues ->
+        )
+
+        // Список повідомлень — займає весь вільний простір
         if (messages.isEmpty()) {
             Box(
-                modifier = Modifier.fillMaxSize().padding(paddingValues),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
                 Text("Почніть розмову першим!", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -128,8 +102,8 @@ fun ChatDetailScreen(
             LazyColumn(
                 state = listState,
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
+                    .weight(1f)
+                    .fillMaxWidth()
                     .padding(horizontal = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 contentPadding = PaddingValues(vertical = 8.dp)
@@ -141,6 +115,38 @@ fun ChatDetailScreen(
                         timestamp = msg.createdAt
                     )
                 }
+            }
+        }
+
+        // Поле вводу — завжди прямо над клавіатурою
+        HorizontalDivider()
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                placeholder = { Text("Повідомлення...") },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(24.dp),
+                maxLines = 4
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            FloatingActionButton(
+                onClick = {
+                    if (text.isNotBlank()) {
+                        viewModel.sendMessage(chatPartnerId, text)
+                        text = ""
+                    }
+                },
+                containerColor = MaterialTheme.colorScheme.primary,
+                elevation = FloatingActionButtonDefaults.elevation(0.dp),
+                modifier = Modifier.size(52.dp)
+            ) {
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Надіслати")
             }
         }
     }
@@ -180,16 +186,13 @@ fun MessageBubble(text: String, isMe: Boolean, timestamp: String? = null) {
                     )
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                // Будуємо AnnotatedString — стабільний підхід без FlowRow
                 val annotated = buildAnnotatedString {
                     val matches = URL_REGEX.findAll(text).toList()
-
                     if (matches.isEmpty()) {
                         withStyle(SpanStyle(color = textColor)) { append(text) }
                     } else {
                         var cursor = 0
                         for (match in matches) {
-                            // Звичайний текст до посилання
                             if (match.range.first > cursor) {
                                 withStyle(SpanStyle(color = textColor)) {
                                     append(text.substring(cursor, match.range.first))
@@ -198,21 +201,16 @@ fun MessageBubble(text: String, isMe: Boolean, timestamp: String? = null) {
                             val url    = match.value
                             val isSafe = SAFE_DOMAINS.any { url.contains(it, ignoreCase = true) }
                             val tag    = if (isSafe) SAFE_LINK_TAG else UNSAFE_LINK_TAG
-
                             pushStringAnnotation(tag = tag, annotation = url)
                             withStyle(SpanStyle(color = linkColor, fontWeight = FontWeight.SemiBold)) {
                                 append(url)
                                 if (!isSafe) append(" ⚠️")
                             }
                             pop()
-
                             cursor = match.range.last + 1
                         }
-                        // Залишок тексту
                         if (cursor < text.length) {
-                            withStyle(SpanStyle(color = textColor)) {
-                                append(text.substring(cursor))
-                            }
+                            withStyle(SpanStyle(color = textColor)) { append(text.substring(cursor)) }
                         }
                     }
                 }
@@ -221,24 +219,17 @@ fun MessageBubble(text: String, isMe: Boolean, timestamp: String? = null) {
                     text  = annotated,
                     style = MaterialTheme.typography.bodyMedium,
                     onClick = { offset ->
-                        // Спочатку перевіряємо безпечні посилання
                         annotated.getStringAnnotations(SAFE_LINK_TAG, offset, offset)
                             .firstOrNull()?.let { ann ->
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse(ann.item))
-                                )
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ann.item)))
                                 return@ClickableText
                             }
-                        // Потім небезпечні — показуємо попередження
                         annotated.getStringAnnotations(UNSAFE_LINK_TAG, offset, offset)
-                            .firstOrNull()?.let { ann ->
-                                warningUrl = ann.item
-                            }
+                            .firstOrNull()?.let { ann -> warningUrl = ann.item }
                     }
                 )
             }
 
-            // Час
             if (timestamp != null) {
                 Text(
                     text  = formatMessageTime(timestamp),
@@ -250,16 +241,14 @@ fun MessageBubble(text: String, isMe: Boolean, timestamp: String? = null) {
         }
     }
 
-    // Діалог-попередження для підозрілих посилань
     if (warningUrl != null) {
         AlertDialog(
             onDismissRequest = { warningUrl = null },
             title = { Text("⚠️ Підозріле посилання") },
             text = {
                 Text(
-                    "Братан, обережно з цим покликанням! Воно веде на неперевірений ресурс:\n\n" +
-                            "${warningUrl}\n\n" +
-                            "Ми не можемо гарантувати безпеку цього сайту. Ти впевнений, що хочеш перейти?"
+                    "Братан, обережно з цим покликанням!\n\n${warningUrl}\n\n" +
+                            "Ми не можемо гарантувати безпеку цього сайту. Перейти?"
                 )
             },
             confirmButton = {
