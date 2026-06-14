@@ -53,6 +53,7 @@ import kotlin.math.roundToInt
 fun PlayerScreen(
     trackId: String,
     onNavigateBack: () -> Unit,
+    backgroundContent: @Composable BoxScope.() -> Unit = {},
     viewModel: PlayerViewModel = hiltViewModel()
 ) {
     val track by viewModel.track.collectAsState()
@@ -73,8 +74,22 @@ fun PlayerScreen(
 
     var isQueueVisible by remember { mutableStateOf(false) }
     var showBottomSheet by remember { mutableStateOf(false) }
+    var isDraggingToDismiss by remember { mutableStateOf(false) }
+    var playerDragOffsetY by remember { mutableFloatStateOf(0f) }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val playerDismissOffsetY by animateFloatAsState(
+        targetValue = playerDragOffsetY,
+        animationSpec = if (isDraggingToDismiss) {
+            snap()
+        } else {
+            spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessMediumLow
+            )
+        },
+        label = "playerDismissOffsetY"
+    )
 
     // Перевірка орієнтації екрану
     val configuration = LocalConfiguration.current
@@ -86,8 +101,11 @@ fun PlayerScreen(
     }
 
     if (track == null) {
-        Box(Modifier.fillMaxSize(), Alignment.Center) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        Box(Modifier.fillMaxSize()) {
+            backgroundContent()
+            Box(Modifier.fillMaxSize(), Alignment.Center) {
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            }
         }
         return
     }
@@ -101,24 +119,57 @@ fun PlayerScreen(
     val displayTitle = extractedTitle ?: track!!.title
     val displayArtist = bandName
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    Box(Modifier.fillMaxSize()) {
+        backgroundContent()
 
         // ================= MAIN (Background + UI) =================
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .clickable(enabled = isQueueVisible) { isQueueVisible = false }
+                .offset { IntOffset(0, playerDismissOffsetY.roundToInt()) }
                 .graphicsLayer {
                     scaleX = if (isQueueVisible) 0.92f else 1f
                     scaleY = if (isQueueVisible) 0.92f else 1f
                     clip = true
                     shape = RoundedCornerShape(if (isQueueVisible) 24.dp.toPx() else 0f)
                 }
-                .pointerInput(Unit) {
-                    detectVerticalDragGestures { change, dragAmount ->
+                .pointerInput(isQueueVisible) {
+                    var accumulatedDrag = 0f
+                    var hasHandledDismiss = false
+
+                    detectVerticalDragGestures(
+                        onDragStart = {
+                            accumulatedDrag = 0f
+                            hasHandledDismiss = false
+                            isDraggingToDismiss = true
+                        },
+                        onDragEnd = {
+                            isDraggingToDismiss = false
+                            if (!isQueueVisible && playerDragOffsetY > 120f && !hasHandledDismiss) {
+                                hasHandledDismiss = true
+                                onNavigateBack()
+                            } else {
+                                playerDragOffsetY = 0f
+                            }
+                            accumulatedDrag = 0f
+                        },
+                        onDragCancel = {
+                            isDraggingToDismiss = false
+                            playerDragOffsetY = 0f
+                            accumulatedDrag = 0f
+                        }
+                    ) { change, dragAmount ->
                         change.consume()
-                        if (dragAmount < -20f && !isQueueVisible) isQueueVisible = true
-                        if (dragAmount > 20f && !isQueueVisible) onNavigateBack()
+                        if (!isQueueVisible && (dragAmount > 0f || playerDragOffsetY > 0f)) {
+                            playerDragOffsetY = (playerDragOffsetY + dragAmount).coerceAtLeast(0f)
+                        } else {
+                            accumulatedDrag += dragAmount
+                            if (accumulatedDrag < -80f && !isQueueVisible) {
+                                isQueueVisible = true
+                                accumulatedDrag = 0f
+                            }
+                        }
                     }
                 }
         ) {
@@ -290,14 +341,27 @@ fun PlayerScreen(
         }
 
         // ================= QUEUE =================
-        AnimatedVisibility(isQueueVisible, enter = fadeIn(), exit = fadeOut()) {
+        AnimatedVisibility(
+            isQueueVisible,
+            enter = fadeIn(animationSpec = tween(220)),
+            exit = fadeOut(animationSpec = tween(180))
+        ) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(0.6f)))
         }
 
         AnimatedVisibility(
             isQueueVisible,
-            enter = slideInVertically(initialOffsetY = { it }),
-            exit = slideOutVertically(targetOffsetY = { it }),
+            enter = slideInVertically(
+                initialOffsetY = { it },
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            ),
+            exit = slideOutVertically(
+                targetOffsetY = { it },
+                animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)
+            ),
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {
             var dragOffset by remember { mutableFloatStateOf(0f) }
@@ -371,8 +435,22 @@ fun PlayerScreen(
 @Composable
 private fun PlayerArtwork(track: TrackDto, embeddedBitmap: androidx.compose.ui.graphics.ImageBitmap?, isPlaying: Boolean, viewModel: PlayerViewModel) {
     var dragOffsetX by remember { mutableFloatStateOf(0f) }
-    val animatedOffsetX by animateFloatAsState(targetValue = dragOffsetX, label = "offsetX")
-    val artScale by animateFloatAsState(targetValue = if (isPlaying) 1f else 0.85f, animationSpec = tween(durationMillis = 500), label = "artScale")
+    val animatedOffsetX by animateFloatAsState(
+        targetValue = dragOffsetX,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "offsetX"
+    )
+    val artScale by animateFloatAsState(
+        targetValue = if (isPlaying) 1f else 0.85f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "artScale"
+    )
 
     Box(
         modifier = Modifier

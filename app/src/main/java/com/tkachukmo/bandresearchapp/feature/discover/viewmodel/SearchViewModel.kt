@@ -7,21 +7,26 @@ import com.tkachukmo.bandresearchapp.data.remote.BandRepository
 import com.tkachukmo.bandresearchapp.data.remote.dto.BandDto
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import javax.inject.Inject
 
 @HiltViewModel
 class SearchViewModel @Inject constructor(
     private val bandRepository: BandRepository,
-    @ApplicationContext private val context: Context // ДОДАНО: Контекст для доступу до пам'яті
+    @ApplicationContext context: Context
 ) : ViewModel() {
 
     private val prefs = context.getSharedPreferences("search_prefs", Context.MODE_PRIVATE)
+    private val historyJson = Json { ignoreUnknownKeys = true }
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -42,55 +47,69 @@ class SearchViewModel @Inject constructor(
     }
 
     private fun loadSearchHistory() {
-        val savedHistory = prefs.getString("history", "") ?: ""
-        if (savedHistory.isNotBlank()) {
-            _searchHistory.value = savedHistory.split("||")
-        }
+        val savedHistory = prefs.getString(HISTORY_KEY, "") ?: ""
+        if (savedHistory.isBlank()) return
+
+        _searchHistory.value = runCatching {
+            historyJson.decodeFromString<List<String>>(savedHistory)
+        }.getOrElse {
+            savedHistory.split(LEGACY_HISTORY_SEPARATOR)
+        }.map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinctBy { it.lowercase() }
+            .take(MAX_HISTORY_ITEMS)
     }
 
     fun onQueryChange(query: String) {
         _searchQuery.value = query
         searchJob?.cancel()
 
-        if (query.isBlank()) {
+        val normalizedQuery = query.trim()
+        if (normalizedQuery.isBlank()) {
             _searchResults.value = emptyList()
+            _isLoading.value = false
             return
         }
 
         searchJob = viewModelScope.launch {
-            delay(500)
+            delay(SEARCH_DEBOUNCE_MS)
             _isLoading.value = true
             try {
-                _searchResults.value = bandRepository.searchBands(query)
+                _searchResults.value = bandRepository.searchBands(normalizedQuery)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 e.printStackTrace()
-                val normalizedQuery = query.trim()
-                _searchResults.value = bandRepository.getCachedBands().filter { band ->
-                    band.name.contains(normalizedQuery, ignoreCase = true) ||
-                            band.description?.contains(normalizedQuery, ignoreCase = true) == true ||
-                            band.genres.any { it.contains(normalizedQuery, ignoreCase = true) }
-                }
+                _searchResults.value = bandRepository.getCachedSearchResults(normalizedQuery)
+            } finally {
+                _isLoading.value = false
             }
-            finally { _isLoading.value = false }
         }
     }
 
     fun addToHistory(query: String) {
-        val q = query.trim()
-        if (q.isNotBlank()) {
-            val current = _searchHistory.value.toMutableList()
-            current.remove(q) // Видаляємо, якщо такий вже був (щоб перемістити нагору)
-            current.add(0, q)
-            if (current.size > 10) current.removeLast() // Зберігаємо тільки 10 останніх
+        val normalizedQuery = query.trim()
+        if (normalizedQuery.isBlank()) return
 
-            _searchHistory.value = current
-            // Зберігаємо в пам'ять телефону
-            prefs.edit().putString("history", current.joinToString("||")).apply()
-        }
+        val updatedHistory = _searchHistory.value
+            .filterNot { it.equals(normalizedQuery, ignoreCase = true) }
+            .toMutableList()
+            .apply { add(0, normalizedQuery) }
+            .take(MAX_HISTORY_ITEMS)
+
+        _searchHistory.value = updatedHistory
+        prefs.edit().putString(HISTORY_KEY, historyJson.encodeToString(updatedHistory)).apply()
     }
 
     fun clearHistory() {
         _searchHistory.value = emptyList()
-        prefs.edit().remove("history").apply() // Видаляємо з пам'яті
+        prefs.edit().remove(HISTORY_KEY).apply()
+    }
+
+    private companion object {
+        const val HISTORY_KEY = "history"
+        const val LEGACY_HISTORY_SEPARATOR = "||"
+        const val MAX_HISTORY_ITEMS = 10
+        const val SEARCH_DEBOUNCE_MS = 500L
     }
 }

@@ -8,8 +8,10 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,6 +22,7 @@ class BandRepository @Inject constructor(
 ) {
     // Створюємо локальне сховище
     private val prefs = context.getSharedPreferences("band_cache_prefs", Context.MODE_PRIVATE)
+    private val cacheJson = Json { ignoreUnknownKeys = true }
 
     suspend fun getTrackById(trackId: String): TrackDto? {
         return supabase.postgrest["tracks"].select { filter { eq("id", trackId) } }.decodeSingleOrNull<TrackDto>()
@@ -31,7 +34,7 @@ class BandRepository @Inject constructor(
             val band = supabase.postgrest["bands"].select { filter { eq("id", bandId) } }.decodeSingleOrNull<BandDto>()
             if (band != null) {
                 // Якщо завантажили успішно, зберігаємо в пам'ять
-                val jsonString = Json.encodeToString(band)
+                val jsonString = cacheJson.encodeToString(band)
                 prefs.edit().putString("cached_band_$bandId", jsonString).apply()
             }
             band
@@ -43,14 +46,14 @@ class BandRepository @Inject constructor(
     // --- НОВА ФУНКЦІЯ: Дістаємо конкретний гурт з кешу (якщо немає інтернету) ---
     fun getCachedBandById(bandId: String): BandDto? {
         val cachedJson = prefs.getString("cached_band_$bandId", null) ?: return null
-        return try { Json.decodeFromString(cachedJson) } catch (e: Exception) { null }
+        return try { cacheJson.decodeFromString(cachedJson) } catch (e: Exception) { null }
     }
 
     // --- ОНОВЛЕНО: Завантаження всіх гуртів з кешуванням ---
     suspend fun getAllBands(): List<BandDto> {
         try {
             val bands = supabase.postgrest["bands"].select().decodeList<BandDto>()
-            val jsonString = Json.encodeToString(bands)
+            val jsonString = cacheJson.encodeToString(bands)
             prefs.edit().putString("cached_all_bands", jsonString).apply()
             return bands
         } catch (e: Exception) {
@@ -68,14 +71,14 @@ class BandRepository @Inject constructor(
         val bands = supabase.postgrest["bands"]
             .select { filter { isIn("id", bandIds) } }
             .decodeList<BandDto>()
-        prefs.edit().putString("cached_followed_bands", Json.encodeToString(bands)).apply()
+        prefs.edit().putString("cached_followed_bands", cacheJson.encodeToString(bands)).apply()
         return bands
     }
 
     fun getCachedFollowedBands(): List<BandDto> {
         val cachedJson = prefs.getString("cached_followed_bands", null) ?: return emptyList()
         return try {
-            Json.decodeFromString(cachedJson)
+            cacheJson.decodeFromString(cachedJson)
         } catch (e: Exception) {
             emptyList()
         }
@@ -85,16 +88,43 @@ class BandRepository @Inject constructor(
     fun getCachedBands(): List<BandDto> {
         val cachedJson = prefs.getString("cached_all_bands", null) ?: return emptyList()
         return try {
-            Json.decodeFromString(cachedJson)
+            cacheJson.decodeFromString(cachedJson)
         } catch (e: Exception) {
             emptyList()
         }
     }
 
     suspend fun searchBands(query: String): List<BandDto> {
-        return supabase.postgrest["bands"].select {
-            filter { or { ilike("name", "%$query%"); ilike("description", "%$query%") } }
+        val normalizedQuery = query.trim()
+        if (normalizedQuery.isBlank()) return emptyList()
+
+        val bands = supabase.postgrest["bands"].select {
+            filter { or { ilike("name", "%$normalizedQuery%"); ilike("description", "%$normalizedQuery%") } }
         }.decodeList<BandDto>()
+
+        prefs.edit()
+            .putString(searchCacheKey(normalizedQuery), cacheJson.encodeToString(bands))
+            .apply()
+
+        return bands
+    }
+
+    fun getCachedSearchResults(query: String): List<BandDto> {
+        val normalizedQuery = query.trim()
+        if (normalizedQuery.isBlank()) return emptyList()
+
+        val cachedJson = prefs.getString(searchCacheKey(normalizedQuery), null)
+        val cachedSearchResults = cachedJson?.let {
+            try { cacheJson.decodeFromString<List<BandDto>>(it) } catch (e: Exception) { emptyList() }
+        }.orEmpty()
+
+        if (cachedSearchResults.isNotEmpty()) return cachedSearchResults
+
+        return getCachedBands().filter { band ->
+            band.name.contains(normalizedQuery, ignoreCase = true) ||
+                    band.description?.contains(normalizedQuery, ignoreCase = true) == true ||
+                    band.genres.any { it.contains(normalizedQuery, ignoreCase = true) }
+        }
     }
 
     // --- ОНОВЛЕНО: Завантаження треків гурту з кешуванням ---
@@ -102,7 +132,7 @@ class BandRepository @Inject constructor(
         return try {
             val tracks = supabase.postgrest["tracks"].select { filter { eq("band_id", bandId) } }.decodeList<TrackDto>()
             // Зберігаємо треки в пам'ять
-            val jsonString = Json.encodeToString(tracks)
+            val jsonString = cacheJson.encodeToString(tracks)
             prefs.edit().putString("cached_tracks_$bandId", jsonString).apply()
             tracks
         } catch (e: Exception) {
@@ -113,6 +143,13 @@ class BandRepository @Inject constructor(
     // --- НОВА ФУНКЦІЯ: Дістаємо треки гурту з кешу ---
     fun getCachedTracksByBand(bandId: String): List<TrackDto> {
         val cachedJson = prefs.getString("cached_tracks_$bandId", null) ?: return emptyList()
-        return try { Json.decodeFromString(cachedJson) } catch (e: Exception) { emptyList() }
+        return try { cacheJson.decodeFromString(cachedJson) } catch (e: Exception) { emptyList() }
+    }
+
+    private fun searchCacheKey(query: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(query.lowercase().toByteArray())
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        return "cached_search_$digest"
     }
 }

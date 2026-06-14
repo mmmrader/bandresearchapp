@@ -1,7 +1,6 @@
 package com.tkachukmo.bandresearchapp.feature.discover.ui
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -107,7 +106,27 @@ fun DiscoverScreen(
             } else {
                 val currentBand = cards.first()
                 var offsetX by remember { mutableFloatStateOf(0f) }
-                val rotate by animateFloatAsState(targetValue = offsetX / 20f, animationSpec = tween(150), label = "card_rotation")
+                var isDraggingCard by remember { mutableStateOf(false) }
+                val animatedOffsetX by animateFloatAsState(
+                    targetValue = offsetX,
+                    animationSpec = if (isDraggingCard) {
+                        snap()
+                    } else {
+                        spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        )
+                    },
+                    label = "card_offset"
+                )
+                val rotate by animateFloatAsState(
+                    targetValue = animatedOffsetX / 20f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    ),
+                    label = "card_rotation"
+                )
 
                 Box(
                     modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp),
@@ -116,13 +135,21 @@ fun DiscoverScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxSize()
-                            .offset(x = offsetX.dp)
+                            .offset(x = animatedOffsetX.dp)
                             .rotate(rotate)
                             .pointerInput(currentBand.id) {
                                 detectHorizontalDragGestures(
+                                    onDragStart = {
+                                        isDraggingCard = true
+                                    },
                                     onDragEnd = {
+                                        isDraggingCard = false
                                         if (offsetX > 150) viewModel.onBandSwiped(currentBand.id)
                                         else if (offsetX < -150) viewModel.onBandSwiped(currentBand.id)
+                                        offsetX = 0f
+                                    },
+                                    onDragCancel = {
+                                        isDraggingCard = false
                                         offsetX = 0f
                                     }
                                 ) { change, dragAmount ->

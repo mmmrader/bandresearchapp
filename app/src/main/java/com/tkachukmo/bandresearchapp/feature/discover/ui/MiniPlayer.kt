@@ -1,7 +1,7 @@
 ﻿package com.tkachukmo.bandresearchapp.feature.discover.ui
 
 import androidx.compose.animation.*
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -60,11 +60,16 @@ fun MiniPlayer(
     AnimatedVisibility(
         visible = currentTrack != null && !isDismissed,
         enter = slideInVertically(
-            initialOffsetY = { it }
-        ) + fadeIn(),
+            initialOffsetY = { it },
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessMediumLow
+            )
+        ) + fadeIn(animationSpec = tween(180)),
         exit = slideOutVertically(
-            targetOffsetY = { it }
-        ) + fadeOut()
+            targetOffsetY = { it },
+            animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)
+        ) + fadeOut(animationSpec = tween(160))
     ) {
 
         // Р‘РµР·РїРµС‡РЅРёР№ С‚СЂРµРє
@@ -82,11 +87,19 @@ fun MiniPlayer(
 
         val animatedOffsetX by animateFloatAsState(
             targetValue = dragOffsetX,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessMedium
+            ),
             label = "offsetX"
         )
 
         val animatedOffsetY by animateFloatAsState(
             targetValue = dragOffsetY,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessMedium
+            ),
             label = "offsetY"
         )
 

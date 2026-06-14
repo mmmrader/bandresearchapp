@@ -1,10 +1,17 @@
 package com.tkachukmo.bandresearchapp.core.navigation
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.background
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -214,10 +221,30 @@ fun BandResearchNavGraph(
         composable(
             route = Routes.PLAYER,
             deepLinks = listOf(navDeepLink { uriPattern = "bandmatch://player" }),
-            enterTransition = { slideInVertically(initialOffsetY = { it }, animationSpec = tween(400)) },
-            exitTransition = { slideOutVertically(targetOffsetY = { it }, animationSpec = tween(400)) }
+            enterTransition = {
+                slideInVertically(
+                    initialOffsetY = { it },
+                    animationSpec = tween(durationMillis = 520, easing = FastOutSlowInEasing)
+                )
+            },
+            exitTransition = {
+                slideOutVertically(
+                    targetOffsetY = { it },
+                    animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing)
+                )
+            },
+            popEnterTransition = {
+                EnterTransition.None
+            },
+            popExitTransition = {
+                slideOutVertically(
+                    targetOffsetY = { it },
+                    animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing)
+                )
+            }
         ) { backStackEntry ->
             val trackId = backStackEntry.arguments?.getString("trackId") ?: "1"
+            val previousBackStackEntry = navController.previousBackStackEntry
             PlayerScreen(
                 trackId = trackId,
                 onNavigateBack = {
@@ -227,6 +254,13 @@ fun BandResearchNavGraph(
                             popUpTo(0) { inclusive = true }
                         }
                     }
+                },
+                backgroundContent = {
+                    PlayerPreviousScreenBackground(
+                        previousBackStackEntry = previousBackStackEntry,
+                        navController = navController,
+                        navigateToChat = navigateToChat
+                    )
                 }
             )
         }
@@ -369,6 +403,110 @@ fun BandResearchNavGraph(
                 chatName      = chatName,
                 onNavigateBack = { navController.popBackStack() }
             )
+        }
+    }
+}
+
+@Composable
+private fun PlayerPreviousScreenBackground(
+    previousBackStackEntry: NavBackStackEntry?,
+    navController: NavHostController,
+    navigateToChat: (String, String) -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        when (previousBackStackEntry?.destination?.route) {
+            Routes.MAIN -> {
+                val tabIndex = previousBackStackEntry.arguments?.getInt("tabIndex") ?: 0
+                MainScreen(
+                    initialTab = tabIndex,
+                    onNavigateToBandDetail = { bandId ->
+                        navController.navigate("${Routes.BAND_DETAIL_BASE}/$bandId")
+                    },
+                    onNavigateToNotifications = {
+                        navController.navigate(Routes.NOTIFICATIONS)
+                    },
+                    onNavigateToBandManager = {
+                        navController.navigate(Routes.BAND_MANAGER)
+                    },
+                    onNavigateToPlayer = { trackId ->
+                        navController.navigate("${Routes.PLAYER_BASE}/$trackId")
+                    },
+                    onNavigateToChatList = {
+                        navController.navigate(Routes.CHAT_LIST)
+                    },
+                    onRefreshApp = {
+                        navController.navigate(Routes.MAIN_BASE) {
+                            popUpTo(Routes.MAIN_BASE) { inclusive = true }
+                        }
+                    },
+                    onLogout = {
+                        navController.navigate(Routes.LOGIN) {
+                            popUpTo(Routes.MAIN_BASE) { inclusive = true }
+                        }
+                    },
+                    onNavigateToEditProfile = { navController.navigate(Routes.EDIT_PROFILE) },
+                    onNavigateToPlaylists = { navController.navigate(Routes.PLAYLISTS) },
+                    onNavigateToHistory = { navController.navigate(Routes.HISTORY) },
+                    onNavigateToSecurity = { navController.navigate(Routes.SECURITY) },
+                    onNavigateToHelp = { navController.navigate(Routes.HELP) },
+                    onNavigateToEqualizer = { navController.navigate(Routes.EQUALIZER) }
+                )
+            }
+
+            Routes.BAND_DETAIL -> {
+                val bandId = previousBackStackEntry.arguments?.getString("bandId") ?: return@Box
+                BandDetailScreen(
+                    bandId = bandId,
+                    onNavigateBack = { navController.popBackStack() },
+                    onPlayTrack = { track ->
+                        navController.navigate("${Routes.PLAYER_BASE}/${track.id}")
+                    },
+                    onNavigateToPlayer = { trackId ->
+                        navController.navigate("${Routes.PLAYER_BASE}/$trackId")
+                    },
+                    onNavigateToTab = { tabIndex ->
+                        navController.navigate("${Routes.MAIN_BASE}?tabIndex=$tabIndex") {
+                            popUpTo(Routes.MAIN_BASE) { inclusive = true }
+                        }
+                    },
+                    onNavigateToChat = navigateToChat
+                )
+            }
+
+            Routes.PLAYLIST_DETAIL -> {
+                val playlistId = previousBackStackEntry.arguments?.getString("playlistId") ?: return@Box
+                val encodedName = previousBackStackEntry.arguments?.getString("playlistName") ?: ""
+                val playlistName = java.net.URLDecoder.decode(encodedName, "UTF-8")
+                val isPublic = previousBackStackEntry.arguments?.getBoolean("isPublic") ?: false
+
+                PlaylistDetailScreen(
+                    playlist = PlaylistDto(
+                        id = playlistId,
+                        userId = "",
+                        name = playlistName,
+                        isPublic = isPublic
+                    ),
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToPlayer = { trackId ->
+                        navController.navigate("${Routes.PLAYER_BASE}/$trackId")
+                    }
+                )
+            }
+
+            Routes.HISTORY -> {
+                HistoryScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToPlayer = { trackId ->
+                        navController.navigate("${Routes.PLAYER_BASE}/$trackId")
+                    }
+                )
+            }
+
+            else -> Unit
         }
     }
 }
