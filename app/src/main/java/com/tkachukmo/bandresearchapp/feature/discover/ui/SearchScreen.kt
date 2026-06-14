@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.History
@@ -15,6 +16,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -22,6 +24,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import coil3.compose.AsyncImage
 import com.tkachukmo.bandresearchapp.feature.discover.ui.toBandCard
 import com.tkachukmo.bandresearchapp.feature.discover.viewmodel.SearchViewModel
 
@@ -130,7 +133,7 @@ fun SearchScreen(
                     items(results) { dto ->
                         val band = dto.toBandCard() // Використовуємо наш маппер з CatalogScreen
                         SearchItemRow(
-                            emoji = band.emoji,
+                            imageUrl = dto.avatarUrl ?: dto.coverUrl,
                             name = band.name,
                             count = "${band.genre} · ${band.country}",
                             onClick = {
@@ -147,7 +150,7 @@ fun SearchScreen(
 
 @Composable
 fun SearchItemRow(
-    emoji: String,
+    imageUrl: String?,
     name: String,
     count: String,
     onClick: () -> Unit = {}
@@ -171,7 +174,23 @@ fun SearchItemRow(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                Text(text = emoji, fontSize = 20.sp)
+                if (imageUrl != null) {
+                    AsyncImage(
+                        model = imageUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(12.dp))
+                    )
+                } else {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
 

@@ -254,6 +254,53 @@ class BandManagerViewModel @Inject constructor(
         }
     }
 
+    fun deleteRelease(releaseId: String) {
+        val bandId = _currentBand.value?.id ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            _isLoading.value = true
+            try {
+                val releaseTracks = supabaseClient.postgrest["tracks"]
+                    .select {
+                        filter {
+                            eq("band_id", bandId)
+                            eq("release_id", releaseId)
+                        }
+                    }
+                    .decodeList<TrackDto>()
+                val releaseTrackIds = releaseTracks.map { it.id }
+
+                if (releaseTrackIds.isNotEmpty()) {
+                    supabaseClient.postgrest["playlist_tracks"].delete {
+                        filter { isIn("track_id", releaseTrackIds) }
+                    }
+                }
+
+                supabaseClient.postgrest["tracks"].delete {
+                    filter {
+                        eq("band_id", bandId)
+                        eq("release_id", releaseId)
+                    }
+                }
+                supabaseClient.postgrest["releases"].delete {
+                    filter {
+                        eq("id", releaseId)
+                        eq("band_id", bandId)
+                    }
+                }
+                if (_selectedReleaseId.value == releaseId) {
+                    _selectedReleaseId.value = null
+                }
+                loadTracks(bandId)
+                loadReleases(bandId)
+                _errorMessage.value = "Реліз видалено"
+            } catch (t: Throwable) {
+                handleException(t, "Помилка видалення релізу")
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
     private fun extractYouTubeId(url: String): String? {
         val pattern = "(?<=watch\\?v=|/videos/|embed\\/|youtu.be\\/|\\/v\\/|\\/e\\/|watch\\?v%3D|watch\\?feature=player_embedded&v=|%2Fvideos%2F|embed%2F|youtu.be%2F|%2Fv%2F)[^#\\&\\?\\n]*"
         val compiledPattern = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE)
@@ -284,7 +331,16 @@ class BandManagerViewModel @Inject constructor(
         }
     }
 
-    fun deleteVideo(videoId: String) { viewModelScope.launch { try { supabaseClient.postgrest["videos"].delete { filter { eq("id", videoId) } }; _currentBand.value?.id?.let { loadVideos(it) } } catch (t: Throwable) {} } }
+    fun deleteVideo(videoId: String) {
+        viewModelScope.launch {
+            try {
+                supabaseClient.postgrest["videos"].delete { filter { eq("id", videoId) } }
+                _currentBand.value?.id?.let { loadVideos(it) }
+            } catch (t: Throwable) {
+                handleException(t, "Помилка видалення відео")
+            }
+        }
+    }
 
     fun updateBandInfo(newName: String, newDesc: String, onSuccess: () -> Unit) {
         val bandId = _currentBand.value?.id ?: return
@@ -317,7 +373,16 @@ class BandManagerViewModel @Inject constructor(
 
     fun playTrack(trackDto: TrackDto, allTracks: List<TrackDto>) { audioController.playQueue(allTracks, allTracks.indexOfFirst { it.id == trackDto.id }.coerceAtLeast(0)) }
 
-    fun deleteTrack(trackId: String) { viewModelScope.launch { try { supabaseClient.postgrest["tracks"].delete { filter { eq("id", trackId) } }; _currentBand.value?.id?.let { loadTracks(it) } } catch (t: Throwable) {} } }
+    fun deleteTrack(trackId: String) {
+        viewModelScope.launch {
+            try {
+                supabaseClient.postgrest["tracks"].delete { filter { eq("id", trackId) } }
+                _currentBand.value?.id?.let { loadTracks(it) }
+            } catch (t: Throwable) {
+                handleException(t, "Помилка видалення треку")
+            }
+        }
+    }
 
     fun createBand(name: String, slug: String, genres: String, onSuccess: () -> Unit) {
         viewModelScope.launch {
@@ -539,10 +604,30 @@ class BandManagerViewModel @Inject constructor(
         val bandId = _currentBand.value?.id ?: return
         val fileUri = _selectedFileUri.value ?: return
         val relId = _selectedReleaseId.value
+        val title = _uploadTitle.value.trim()
+
+        if (title.isBlank()) {
+            _errorMessage.value = "Назва треку не може бути порожньою"
+            return
+        }
 
         viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
             try {
+                val existingTrack = supabaseClient.postgrest["tracks"]
+                    .select {
+                        filter {
+                            eq("band_id", bandId)
+                            ilike("title", title)
+                        }
+                    }
+                    .decodeList<TrackDto>()
+
+                if (existingTrack.isNotEmpty()) {
+                    _errorMessage.value = "Трек з такою назвою вже є у цьому гурті"
+                    return@launch
+                }
+
                 val trackUuid = UUID.randomUUID().toString()
                 val audioBytes = context.contentResolver.openInputStream(fileUri)?.use { it.readBytes() } ?: return@launch
                 val audioFileName = "audio_$trackUuid.mp3"
@@ -556,10 +641,10 @@ class BandManagerViewModel @Inject constructor(
                     coverUrl = supabaseClient.storage["images"].publicUrl(coverFileName)
                 }
 
-                supabaseClient.postgrest["tracks"].insert(TrackInsertDto(band_id = bandId, release_id = relId, title = _uploadTitle.value, duration_sec = _uploadDuration.value, audio_url = audioUrl, cover_url = coverUrl))
+                supabaseClient.postgrest["tracks"].insert(TrackInsertDto(band_id = bandId, release_id = relId, title = title, duration_sec = _uploadDuration.value, audio_url = audioUrl, cover_url = coverUrl))
                 createAutomaticEvent(
                     bandId = bandId,
-                    title = "Новий трек: ${_uploadTitle.value}",
+                    title = "Новий трек: $title",
                     type = "release",
                     description = "Трек додано до каталогу гурту.",
                     smartLink = audioUrl

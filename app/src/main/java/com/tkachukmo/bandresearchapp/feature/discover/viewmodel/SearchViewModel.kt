@@ -1,8 +1,6 @@
 package com.tkachukmo.bandresearchapp.feature.discover.viewmodel
 
 import android.content.Context
-import android.os.Build
-import androidx.annotation.RequiresApi
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tkachukmo.bandresearchapp.data.remote.BandRepository
@@ -64,12 +62,19 @@ class SearchViewModel @Inject constructor(
             _isLoading.value = true
             try {
                 _searchResults.value = bandRepository.searchBands(query)
-            } catch (e: Exception) { e.printStackTrace() }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                val normalizedQuery = query.trim()
+                _searchResults.value = bandRepository.getCachedBands().filter { band ->
+                    band.name.contains(normalizedQuery, ignoreCase = true) ||
+                            band.description?.contains(normalizedQuery, ignoreCase = true) == true ||
+                            band.genres.any { it.contains(normalizedQuery, ignoreCase = true) }
+                }
+            }
             finally { _isLoading.value = false }
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     fun addToHistory(query: String) {
         val q = query.trim()
         if (q.isNotBlank()) {

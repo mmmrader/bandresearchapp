@@ -353,7 +353,11 @@ fun BandDashboard(
         )
         else {
             releases.forEach { release ->
-                ReleaseItem(release)
+                ReleaseItem(
+                    release = release,
+                    tracksToDelete = tracks.filter { it.releaseId == release.id },
+                    onDelete = { viewModel.deleteRelease(release.id) }
+                )
                 Spacer(modifier = Modifier.height(8.dp))
             }
         }
@@ -698,6 +702,24 @@ fun VacanciesManagerSection(
 
 @Composable
 fun VacancyManagerItem(vacancy: VacancyDto, onDelete: (String) -> Unit) {
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Закрити вакансію?") },
+            text = { Text("Вакансія \"${vacancy.instrument}\" більше не буде активною.") },
+            confirmButton = {
+                TextButton(onClick = { showDeleteDialog = false; onDelete(vacancy.id) }) {
+                    Text("Закрити", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Скасувати") }
+            }
+        )
+    }
+
     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.PersonSearch, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -706,7 +728,7 @@ fun VacancyManagerItem(vacancy: VacancyDto, onDelete: (String) -> Unit) {
                 Text(vacancy.instrument, fontWeight = FontWeight.SemiBold)
                 Text(vacancy.city ?: "Місто не вказане", style = MaterialTheme.typography.bodySmall)
             }
-            IconButton(onClick = { onDelete(vacancy.id) }) {
+            IconButton(onClick = { showDeleteDialog = true }) {
                 Icon(Icons.Default.Delete, contentDescription = "Закрити вакансію", tint = MaterialTheme.colorScheme.error)
             }
         }
@@ -852,7 +874,52 @@ fun AddReleaseForm(viewModel: BandManagerViewModel, onCancel: () -> Unit, onSave
 }
 
 @Composable
-fun ReleaseItem(release: ReleaseDto) {
+fun ReleaseItem(
+    release: ReleaseDto,
+    tracksToDelete: List<TrackDto>,
+    onDelete: () -> Unit
+) {
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Видалити реліз?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Реліз \"${release.title}\" буде видалено.")
+                    if (tracksToDelete.isEmpty()) {
+                        Text(
+                            "До нього не прив'язано треків.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    } else {
+                        Text("Разом із ним видаляться треки:", fontWeight = FontWeight.SemiBold)
+                        tracksToDelete.take(6).forEach { track ->
+                            Text(text = "• ${track.title}", style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (tracksToDelete.size > 6) {
+                            Text(
+                                text = "І ще ${tracksToDelete.size - 6}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDeleteDialog = false; onDelete() }) {
+                    Text("Видалити", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Скасувати") }
+            }
+        )
+    }
+
     Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         Row(modifier = Modifier.padding(8.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
@@ -861,6 +928,12 @@ fun ReleaseItem(release: ReleaseDto) {
             }
             Column(modifier = Modifier.padding(start = 16.dp).weight(1f)) {
                 Text(text = release.title, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(text = "${tracksToDelete.size} треків", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = { showDeleteDialog = true }, contentPadding = PaddingValues(0.dp)) {
+                    Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Видалити", color = MaterialTheme.colorScheme.error)
+                }
                 Text(text = "${release.releaseType.uppercase()} • ${release.releaseYear ?: ""}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
         }
